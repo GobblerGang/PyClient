@@ -2,131 +2,113 @@ from cryptography.hazmat.primitives.asymmetric import x25519, ed25519
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-import os
 import json
-import uuid
-from datetime import datetime, timedelta
+import base64
+from typing import Tuple, Dict, Any
 
-class KeyPair:
-    def __init__(self):
-        self.private_key = x25519.X25519PrivateKey.generate()
-        self.public_key = self.private_key.public_key()
-    
-    def get_public_bytes(self):
-        return self.public_key.public_bytes(
+class CryptoUtils:
+    @staticmethod
+    def generate_identity_keypair() -> Tuple[x25519.X25519PrivateKey, x25519.X25519PublicKey]:
+        """Generate a new X25519 identity key pair."""
+        private_key = x25519.X25519PrivateKey.generate()
+        public_key = private_key.public_key()
+        return private_key, public_key
+
+    @staticmethod
+    def generate_signed_prekey(identity_key: ed25519.Ed25519PrivateKey) -> Tuple[x25519.X25519PrivateKey, x25519.X25519PublicKey, bytes]:
+        """Generate a signed prekey and its signature."""
+        private_key = x25519.X25519PrivateKey.generate()
+        public_key = private_key.public_key()
+        public_bytes = public_key.public_bytes(
             encoding=serialization.Encoding.Raw,
             format=serialization.PublicFormat.Raw
         )
-    
-    def get_private_bytes(self):
-        return self.private_key.private_bytes(
-            encoding=serialization.Encoding.Raw,
-            format=serialization.PrivateFormat.Raw,
-            encryption_algorithm=serialization.NoEncryption()
-        )
+        signature = identity_key.sign(public_bytes)
+        return private_key, public_key, signature
 
-class PAC:
-    def __init__(self, file_id, recipient_id, issuer_id, encrypted_file_key, 
-                 sender_ephemeral_pubkey, valid_until=None, revoked=False):
-        self.pac_id = str(uuid.uuid4())
-        self.file_id = file_id
-        self.recipient_id = recipient_id
-        self.issuer_id = issuer_id
-        self.encrypted_file_key = encrypted_file_key
-        self.sender_ephemeral_pubkey = sender_ephemeral_pubkey
-        self.valid_until = valid_until or (datetime.utcnow() + timedelta(days=365))
-        self.revoked = revoked
-        self.signature = None
+    @staticmethod
+    def perform_3xdh(
+        identity_private: x25519.X25519PrivateKey,
+        identity_public: x25519.X25519PublicKey,
+        ephemeral_private: x25519.X25519PrivateKey,
+        ephemeral_public: x25519.X25519PublicKey,
+        recipient_identity_public: x25519.X25519PublicKey,
+        recipient_signed_prekey_public: x25519.X25519PublicKey,
+        recipient_ephemeral_public: x25519.X25519PublicKey
+    ) -> bytes:
+        """Perform 3XDH key exchange."""
+        # First DH
+        shared1 = identity_private.exchange(recipient_ephemeral_public)
+        # Second DH
+        shared2 = ephemeral_private.exchange(recipient_identity_public)
+        # Third DH
+        shared3 = ephemeral_private.exchange(recipient_signed_prekey_public)
 
-    def to_dict(self):
-        return {
-            'pac_id': self.pac_id,
-            'file_id': self.file_id,
-            'recipient_id': self.recipient_id,
-            'issuer_id': self.issuer_id,
-            'encrypted_file_key': self.encrypted_file_key,
-            'sender_ephemeral_pubkey': self.sender_ephemeral_pubkey,
-            'valid_until': self.valid_until.isoformat(),
-            'revoked': self.revoked,
-            'signature': self.signature
-        }
-
-    def sign(self, private_key):
-        # Create message to sign (excluding signature field)
-        message = json.dumps({
-            'pac_id': self.pac_id,
-            'file_id': self.file_id,
-            'recipient_id': self.recipient_id,
-            'issuer_id': self.issuer_id,
-            'encrypted_file_key': self.encrypted_file_key,
-            'sender_ephemeral_pubkey': self.sender_ephemeral_pubkey,
-            'valid_until': self.valid_until.isoformat(),
-            'revoked': self.revoked
-        }).encode()
+        # Derive final key
+        shared_secret = shared1 + shared2 + shared3
+        derived_key = HKDF(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=None,
+            info=b'3XDH key agreement'
+        ).derive(shared_secret)
         
-        # Sign the message
-        signature = private_key.sign(message)
-        self.signature = signature.hex()
-        return self.signature
+        return derived_key
 
-    @classmethod
-    def from_dict(cls, data):
-        pac = cls(
-            file_id=data['file_id'],
-            recipient_id=data['recipient_id'],
-            issuer_id=data['issuer_id'],
-            encrypted_file_key=data['encrypted_file_key'],
-            sender_ephemeral_pubkey=data['sender_ephemeral_pubkey'],
-            valid_until=datetime.fromisoformat(data['valid_until']),
-            revoked=data['revoked']
-        )
-        pac.pac_id = data['pac_id']
-        pac.signature = data['signature']
+    @staticmethod
+    def encrypt_file(file_data: bytes, key: bytes) -> Tuple[bytes, bytes]:
+        """Encrypt file data using AES-GCM."""
+        aesgcm = AESGCM(key)
+        nonce = os.urandom(12)
+        ciphertext = aesgcm.encrypt(nonce, file_data, None)
+        return nonce, ciphertext
+
+    @staticmethod
+    def decrypt_file(nonce: bytes, ciphertext: bytes, key: bytes) -> bytes:
+        """Decrypt file data using AES-GCM."""
+        aesgcm = AESGCM(key)
+        return aesgcm.decrypt(nonce, ciphertext, None)
+
+    @staticmethod
+    def create_pac(
+        file_id: str,
+        recipient_id: str,
+        issuer_id: str,
+        encrypted_file_key: bytes,
+        sender_ephemeral_pubkey: bytes,
+        valid_until: int,
+        identity_key: ed25519.Ed25519PrivateKey
+    ) -> Dict[str, Any]:
+        """Create a Privilege Attribute Certificate (PAC)."""
+        pac = {
+            "file_id": file_id,
+            "recipient_id": recipient_id,
+            "issuer_id": issuer_id,
+            "encrypted_file_key": base64.b64encode(encrypted_file_key).decode(),
+            "sender_ephemeral_pubkey": base64.b64encode(sender_ephemeral_pubkey).decode(),
+            "valid_until": valid_until,
+            "revoked": False
+        }
+        
+        # Create signature
+        message = json.dumps(pac, sort_keys=True).encode()
+        signature = identity_key.sign(message)
+        pac["signature"] = base64.b64encode(signature).decode()
+        
         return pac
 
-def perform_3xdh(identity_private_key, signed_prekey_public_key, ephemeral_private_key):
-    # First DH exchange
-    shared1 = identity_private_key.exchange(signed_prekey_public_key)
-    
-    # Second DH exchange
-    shared2 = ephemeral_private_key.exchange(signed_prekey_public_key)
-    
-    # Third DH exchange
-    shared3 = ephemeral_private_key.exchange(identity_private_key.public_key())
-    
-    # Combine shared secrets
-    combined = shared1 + shared2 + shared3
-    
-    # Derive final key
-    derived_key = HKDF(
-        algorithm=hashes.SHA256(),
-        length=32,
-        salt=None,
-        info=b'3XDH key agreement'
-    ).derive(combined)
-    
-    return derived_key
-
-def encrypt_file(file_data, key):
-    # Generate random nonce
-    nonce = os.urandom(12)
-    
-    # Create AESGCM cipher
-    cipher = AESGCM(key)
-    
-    # Encrypt the file
-    ciphertext = cipher.encrypt(nonce, file_data, None)
-    
-    # Return nonce + ciphertext
-    return nonce + ciphertext
-
-def decrypt_file(encrypted_data, key):
-    # Split nonce and ciphertext
-    nonce = encrypted_data[:12]
-    ciphertext = encrypted_data[12:]
-    
-    # Create AESGCM cipher
-    cipher = AESGCM(key)
-    
-    # Decrypt the file
-    return cipher.decrypt(nonce, ciphertext, None) 
+    @staticmethod
+    def verify_pac(pac: Dict[str, Any], issuer_public_key: ed25519.Ed25519PublicKey) -> bool:
+        """Verify a PAC's signature."""
+        try:
+            # Extract signature and create message
+            signature = base64.b64decode(pac["signature"])
+            pac_copy = pac.copy()
+            del pac_copy["signature"]
+            message = json.dumps(pac_copy, sort_keys=True).encode()
+            
+            # Verify signature
+            issuer_public_key.verify(signature, message)
+            return True
+        except Exception:
+            return False 

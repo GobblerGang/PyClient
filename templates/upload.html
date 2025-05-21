@@ -3,27 +3,20 @@
 {% block title %}Upload File{% endblock %}
 
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header">
-                <h2 class="text-center">Upload File</h2>
+<div class="row">
+    <div class="col-md-6 offset-md-3">
+        <h2>Upload File</h2>
+        <form method="POST" enctype="multipart/form-data">
+            <div class="mb-3">
+                <label for="file" class="form-label">Select File</label>
+                <input type="file" class="form-control" id="file" name="file" required>
             </div>
-            <div class="card-body">
-                <form method="POST" enctype="multipart/form-data">
-                    <div class="mb-3">
-                        <label for="file" class="form-label">Select File</label>
-                        <input type="file" class="form-control" id="file" name="file" required>
-                    </div>
-                    <div class="d-grid">
-                        <button type="submit" class="btn btn-primary">Upload</button>
-                    </div>
-                </form>
-                <div class="text-center mt-3">
-                    <a href="{{ url_for('list_files') }}" class="btn btn-secondary">Back to Files</a>
-                </div>
+            <div class="mb-3">
+                <label for="recipients" class="form-label">Share with (comma-separated usernames)</label>
+                <input type="text" class="form-control" id="recipients" name="recipients" placeholder="username1, username2, ...">
             </div>
-        </div>
+            <button type="submit" class="btn btn-primary">Upload and Share</button>
+        </form>
     </div>
 </div>
 {% endblock %} 
