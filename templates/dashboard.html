@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="text-center">Welcome to your Dashboard</h2>
+            </div>
+            <div class="card-body">
+                <div class="text-center">
+                    <h3>Hello, {{ current_user.username }}!</h3>
+                    <p class="lead">You are successfully logged in.</p>
+                    <p>Your email: {{ current_user.email }}</p>
+                    <a href="{{ url_for('logout') }}" class="btn btn-danger">Logout</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 
