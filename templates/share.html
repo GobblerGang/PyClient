@@ -3,27 +3,19 @@
 {% block title %}Share File{% endblock %}
 
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header">
-                <h2 class="text-center">Share File</h2>
-            </div>
-            <div class="card-body">
-                <p class="lead">Sharing: {{ file.original_filename }}</p>
-                <form method="POST">
-                    <div class="mb-3">
-                        <label for="username" class="form-label">Username to share with</label>
-                        <input type="text" class="form-control" id="username" name="username" required>
-                    </div>
-                    <div class="d-grid">
-                        <button type="submit" class="btn btn-primary">Share</button>
-                    </div>
-                </form>
-                <div class="text-center mt-3">
-                    <a href="{{ url_for('list_files') }}" class="btn btn-secondary">Back to Files</a>
+<div class="container mt-4">
+    <h2>Share File: {{ file.original_filename }}</h2>
+    
+    <div class="card">
+        <div class="card-body">
+            <form method="POST">
+                <div class="mb-3">
+                    <label for="username" class="form-label">Username to share with:</label>
+                    <input type="text" class="form-control" id="username" name="username" required>
                 </div>
-            </div>
+                <button type="submit" class="btn btn-primary">Share</button>
+                <a href="{{ url_for('list_files') }}" class="btn btn-secondary">Cancel</a>
+            </form>
         </div>
     </div>
 </div>

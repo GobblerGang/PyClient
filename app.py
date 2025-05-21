@@ -5,6 +5,13 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import os
 from datetime import datetime
 from werkzeug.utils import secure_filename
+from crypto_utils import KeyPair, PAC, perform_3xdh, encrypt_file, decrypt_file
+import json
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from cryptography.hazmat.primitives.asymmetric import x25519
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives import serialization
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.urandom(24)
@@ -20,19 +27,16 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
-# Association table for file sharing
-file_shares = db.Table('file_shares',
-    db.Column('file_id', db.Integer, db.ForeignKey('file.id'), primary_key=True),
-    db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True)
-)
-
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(128))
+    identity_key = db.Column(db.String(255), nullable=False)  # Public identity key
+    signed_prekey = db.Column(db.String(255), nullable=False)  # Signed pre-key
+    opk_list = db.Column(db.Text)  # JSON array of one-time pre-keys
     files = db.relationship('File', backref='owner', lazy=True)
-    shared_files = db.relationship('File', secondary=file_shares, lazy='subquery',
+    shared_files = db.relationship('File', secondary='file_shares', lazy='subquery',
         backref=db.backref('shared_with', lazy=True))
 
     def set_password(self, password):
@@ -41,12 +45,49 @@ class User(UserMixin, db.Model):
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
 
+    def generate_keys(self):
+        # Generate identity key pair
+        identity_keypair = KeyPair()
+        self.identity_key = identity_keypair.get_public_bytes().hex()
+        
+        # Generate signed pre-key
+        signed_prekey = KeyPair()
+        self.signed_prekey = signed_prekey.get_public_bytes().hex()
+        
+        # Generate one-time pre-keys
+        opks = [KeyPair().get_public_bytes().hex() for _ in range(10)]
+        self.opk_list = json.dumps(opks)
+
 class File(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     filename = db.Column(db.String(255), nullable=False)
     original_filename = db.Column(db.String(255), nullable=False)
     upload_date = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    mime_type = db.Column(db.String(127))
+    encrypted_blob = db.Column(db.LargeBinary)  # Encrypted file data
+
+class PrivilegeCertificate(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    pac_id = db.Column(db.String(36), unique=True, nullable=False)
+    file_id = db.Column(db.Integer, db.ForeignKey('file.id'), nullable=False)
+    recipient_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    issuer_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    encrypted_file_key = db.Column(db.Text, nullable=False)
+    sender_ephemeral_pubkey = db.Column(db.String(255), nullable=False)
+    valid_until = db.Column(db.DateTime, nullable=False)
+    revoked = db.Column(db.Boolean, default=False)
+    signature = db.Column(db.String(255), nullable=False)
+
+    file = db.relationship('File', backref='privilege_certificates')
+    recipient = db.relationship('User', foreign_keys=[recipient_id])
+    issuer = db.relationship('User', foreign_keys=[issuer_id])
+
+# Association table for file sharing
+file_shares = db.Table('file_shares',
+    db.Column('file_id', db.Integer, db.ForeignKey('file.id'), primary_key=True),
+    db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True)
+)
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -73,6 +114,10 @@ def signup():
 
         user = User(username=username, email=email)
         user.set_password(password)
+        
+        # Generate cryptographic keys for the user
+        user.generate_keys()
+        
         db.session.add(user)
         db.session.commit()
         
@@ -120,17 +165,28 @@ def upload_file():
             return redirect(request.url)
         
         if file:
+            # Generate a random file key
+            file_key = os.urandom(32)
+            
+            # Read and encrypt the file
+            file_data = file.read()
+            encrypted_data = encrypt_file(file_data, file_key)
+            
+            # Save encrypted file
             filename = secure_filename(file.filename)
-            # Create unique filename
             unique_filename = f"{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{filename}"
             file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
-            file.save(file_path)
+            
+            with open(file_path, 'wb') as f:
+                f.write(encrypted_data)
             
             # Save file info to database
             new_file = File(
                 filename=unique_filename,
                 original_filename=filename,
-                owner_id=current_user.id
+                owner_id=current_user.id,
+                mime_type=file.content_type,
+                encrypted_blob=encrypted_data
             )
             db.session.add(new_file)
             db.session.commit()
@@ -164,12 +220,144 @@ def share_file(file_id):
         elif user.id == current_user.id:
             flash('Cannot share with yourself')
         else:
-            file.shared_with.append(user)
+            # Generate ephemeral key pair for this share
+            ephemeral_keypair = KeyPair()
+            
+            # Perform 3XDH key exchange
+            shared_secret = perform_3xdh(
+                current_user.identity_key,
+                user.signed_prekey,
+                ephemeral_keypair.private_key
+            )
+            
+            # Derive key for encrypting the file key
+            user_key = HKDF(
+                algorithm=hashes.SHA256(),
+                length=32,
+                salt=None,
+                info=b'user file key derivation'
+            ).derive(shared_secret)
+            
+            # Encrypt the file key for this user
+            encrypted_file_key = encrypt_file(file_key, user_key)
+            
+            # Create and sign PAC
+            pac = PAC(
+                file_id=file.id,
+                recipient_id=user.id,
+                issuer_id=current_user.id,
+                encrypted_file_key=encrypted_file_key.hex(),
+                sender_ephemeral_pubkey=ephemeral_keypair.get_public_bytes().hex()
+            )
+            
+            # Sign the PAC
+            pac.sign(current_user.identity_key)
+            
+            # Save PAC to database
+            privilege_cert = PrivilegeCertificate(
+                pac_id=pac.pac_id,
+                file_id=file.id,
+                recipient_id=user.id,
+                issuer_id=current_user.id,
+                encrypted_file_key=pac.encrypted_file_key,
+                sender_ephemeral_pubkey=pac.sender_ephemeral_pubkey,
+                valid_until=pac.valid_until,
+                revoked=pac.revoked,
+                signature=pac.signature
+            )
+            
+            db.session.add(privilege_cert)
             db.session.commit()
+            
             flash(f'File shared with {username}')
             return redirect(url_for('list_files'))
     
     return render_template('share.html', file=file)
+
+@app.route('/download/<int:file_id>')
+@login_required
+def download_file(file_id):
+    file = File.query.get_or_404(file_id)
+    
+    # Get the PAC for this user and file
+    pac = PrivilegeCertificate.query.filter_by(
+        file_id=file_id,
+        recipient_id=current_user.id
+    ).first()
+    
+    if not pac:
+        flash('You do not have permission to download this file')
+        return redirect(url_for('list_files'))
+    
+    if pac.revoked:
+        flash('Your access to this file has been revoked')
+        return redirect(url_for('list_files'))
+    
+    if datetime.utcnow() > pac.valid_until:
+        flash('Your access to this file has expired')
+        return redirect(url_for('list_files'))
+    
+    # Verify PAC signature
+    try:
+        message = json.dumps({
+            'pac_id': pac.pac_id,
+            'file_id': pac.file_id,
+            'recipient_id': pac.recipient_id,
+            'issuer_id': pac.issuer_id,
+            'encrypted_file_key': pac.encrypted_file_key,
+            'sender_ephemeral_pubkey': pac.sender_ephemeral_pubkey,
+            'valid_until': pac.valid_until.isoformat(),
+            'revoked': pac.revoked
+        }).encode()
+        
+        # Load issuer's public key
+        issuer = User.query.get(pac.issuer_id)
+        issuer_public_key = x25519.X25519PublicKey.from_public_bytes(
+            bytes.fromhex(issuer.identity_key)
+        )
+        
+        # Verify signature
+        issuer_public_key.verify(
+            bytes.fromhex(pac.signature),
+            message
+        )
+    except Exception:
+        flash('Invalid access certificate')
+        return redirect(url_for('list_files'))
+    
+    # Perform 3XDH to derive the key
+    shared_secret = perform_3xdh(
+        current_user.identity_key,
+        issuer.signed_prekey,
+        bytes.fromhex(pac.sender_ephemeral_pubkey)
+    )
+    
+    # Derive key for decrypting the file key
+    user_key = HKDF(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=None,
+        info=b'user file key derivation'
+    ).derive(shared_secret)
+    
+    # Decrypt the file key
+    encrypted_file_key = bytes.fromhex(pac.encrypted_file_key)
+    file_key = decrypt_file(encrypted_file_key, user_key)
+    
+    # Decrypt the file
+    decrypted_data = decrypt_file(file.encrypted_blob, file_key)
+    
+    # Create temporary file
+    temp_path = os.path.join(app.config['UPLOAD_FOLDER'], f'temp_{file.original_filename}')
+    with open(temp_path, 'wb') as f:
+        f.write(decrypted_data)
+    
+    return send_file(
+        temp_path,
+        as_attachment=True,
+        download_name=file.original_filename,
+        mimetype=file.mime_type
+    )
 
 @app.route('/revoke/<int:file_id>/<int:user_id>')
 @login_required
@@ -179,26 +367,16 @@ def revoke_access(file_id, user_id):
         flash('You do not have permission to revoke access')
         return redirect(url_for('list_files'))
     
-    user = User.query.get_or_404(user_id)
-    if user in file.shared_with:
-        file.shared_with.remove(user)
-        db.session.commit()
-        flash(f'Access revoked for {user.username}')
+    pac = PrivilegeCertificate.query.filter_by(
+        file_id=file_id,
+        recipient_id=user_id
+    ).first_or_404()
     
+    pac.revoked = True
+    db.session.commit()
+    
+    flash(f'Access revoked for {pac.recipient.username}')
     return redirect(url_for('list_files'))
-
-@app.route('/download/<int:file_id>')
-@login_required
-def download_file(file_id):
-    file = File.query.get_or_404(file_id)
-    
-    # Check if user has access to the file
-    if file.owner_id != current_user.id and current_user not in file.shared_with:
-        flash('You do not have permission to download this file')
-        return redirect(url_for('list_files'))
-    
-    file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
-    return send_file(file_path, as_attachment=True, download_name=file.original_filename)
 
 @app.route('/delete/<int:file_id>')
 @login_required
