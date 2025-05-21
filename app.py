@@ -8,6 +8,7 @@ from werkzeug.utils import secure_filename
 from crypto_utils import CryptoUtils
 import json
 import base64
+from cryptography.hazmat.primitives import serialization
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.urandom(24)
@@ -100,12 +101,12 @@ def signup():
         
         # TODO: Store private keys securely (e.g., in browser's IndexedDB)
         # For now, we'll just store them in the session
-        session['identity_private_key'] = base64.b64encode(identity_private.private_bytes(
+        db.session['identity_private_key'] = base64.b64encode(identity_private.private_bytes(
             encoding=serialization.Encoding.Raw,
             format=serialization.PrivateFormat.Raw,
             encryption_algorithm=serialization.NoEncryption()
         )).decode()
-        session['signed_prekey_private_key'] = base64.b64encode(signed_prekey_private.private_bytes(
+        db.session['signed_prekey_private_key'] = base64.b64encode(signed_prekey_private.private_bytes(
             encoding=serialization.Encoding.Raw,
             format=serialization.PrivateFormat.Raw,
             encryption_algorithm=serialization.NoEncryption()
