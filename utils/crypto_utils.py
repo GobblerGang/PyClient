@@ -127,5 +127,4 @@ class CryptoUtils:
             issuer_public_key.verify(signature, message)
             return True
         except Exception:
-            return False 
-        
+            return False

@@ -1,7 +1,7 @@
 from datetime import datetime
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import UserMixin
-from extensions import db
+from extensions.extensions import db
 
 # Association table for file sharing
 file_shares = db.Table('file_shares',

@@ -3,9 +3,9 @@ from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
 from datetime import datetime
 import os
-from models import File, User
-from extensions import db
-from crypto_utils import CryptoUtils
+from models.models import File, User
+from extensions.extensions import db
+from utils.crypto_utils import CryptoUtils
 
 bp_file = Blueprint('file', __name__)
 
@@ -15,7 +15,7 @@ def save_encrypted_file(file, owner_id):
     file_data = file.read()
     nonce, encrypted_data = CryptoUtils.encrypt_with_key(file_data, file_key)
     filename = secure_filename(file.filename)
-    unique_filename = f"{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{filename}"
+    unique_filename = f"{filename}"
     file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], unique_filename)
     with open(file_path, 'wb') as f:
         f.write(nonce + encrypted_data)

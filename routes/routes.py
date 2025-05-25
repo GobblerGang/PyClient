@@ -6,9 +6,9 @@ bp = Blueprint('main', __name__)
 def index():
     return render_template('index.html')
 
-from auth_routes import bp_auth
-from dashboard_routes import bp_dashboard
-from file_routes import bp_file
+from routes.auth_routes import bp_auth
+from routes.dashboard_routes import bp_dashboard
+from routes.file_routes import bp_file
 
 def register_blueprints(app):
     app.register_blueprint(bp)

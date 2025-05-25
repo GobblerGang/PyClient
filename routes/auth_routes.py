@@ -5,10 +5,10 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_user, logout_user, current_user
 
 from cryptography.hazmat.primitives.asymmetric import ed25519, x25519
-from models import User
-from extensions import login_manager, db
-from crypto_utils import CryptoUtils
-from key_utils import (
+from models.models import User
+from extensions.extensions import login_manager, db
+from utils.crypto_utils import CryptoUtils
+from utils.key_utils import (
     try_decrypt_private_keys, verify_decrypted_keys, generate_user_vault, decrypt_all_opks, keypairs_from_opk_bytes,
     get_user_vault, derive_master_key_from_login, b64e
 )

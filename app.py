@@ -1,8 +1,10 @@
 from flask import Flask
 import os
-from extensions import db, login_manager
-from models import User, File, file_shares
-from routes import register_blueprints
+from extensions.extensions import db, login_manager
+from models.models import User, File
+from routes.auth_routes import bp_auth
+from routes.dashboard_routes import bp_dashboard
+from routes.file_routes import bp_file
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.urandom(24)
@@ -15,6 +17,7 @@ db.init_app(app)
 login_manager.init_app(app)
 login_manager.login_view = 'auth.login'
 
+from routes.routes import register_blueprints
 register_blueprints(app)
 
 if __name__ == '__main__':

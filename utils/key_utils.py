@@ -2,7 +2,7 @@ import base64
 import json
 from cryptography.hazmat.primitives.asymmetric import ed25519, x25519
 from cryptography.hazmat.primitives import serialization
-from crypto_utils import CryptoUtils
+from utils.crypto_utils import CryptoUtils
 
 def b64e(b):
     return base64.b64encode(b).decode()
