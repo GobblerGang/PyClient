@@ -4,13 +4,43 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 import json
 import base64
+from argon2.low_level import Type, hash_secret_raw
 from typing import Tuple, Dict, Any
+from secrets import token_bytes
 
 class CryptoUtils:
     @staticmethod
+    def derive_master_key(password: str, salt: bytes) -> bytes:
+        """Derive a master key from a password and salt using Argon2id."""
+        # give reasons for these parameters
+        return hash_secret_raw(
+            password.encode(),
+            salt,
+            time_cost=2,
+            memory_cost=2**16,
+            parallelism=2,
+            hash_len=32,
+            type=Type.ID,
+        )
+        
+    @staticmethod
+    def encrypt_with_key(file_data: bytes, key: bytes, associated_data:bytes=None) -> Tuple[bytes, bytes]:
+        """Encrypt file data using AES-GCM."""
+        aesgcm = AESGCM(key)
+        nonce = token_bytes(12)  
+        ciphertext = aesgcm.encrypt(nonce, file_data, associated_data)
+        return nonce, ciphertext
+
+    @staticmethod
+    def decrypt_with_key(nonce: bytes, ciphertext: bytes, key: bytes, associated_data:bytes=None) -> bytes:
+        """Decrypt file data using AES-GCM."""
+        aesgcm = AESGCM(key)
+        return aesgcm.decrypt(nonce, ciphertext, associated_data)
+    
+    @staticmethod
     def generate_identity_keypair() -> Tuple[x25519.X25519PrivateKey, x25519.X25519PublicKey]:
-        """Generate a new X25519 identity key pair."""
-        private_key = x25519.X25519PrivateKey.generate()
+        """Generate a new Ed25519 identity key pair."""
+        private_key = ed25519.Ed25519PrivateKey.generate()
         public_key = private_key.public_key()
         return private_key, public_key
 
@@ -56,20 +86,6 @@ class CryptoUtils:
         return derived_key
 
     @staticmethod
-    def encrypt_file(file_data: bytes, key: bytes) -> Tuple[bytes, bytes]:
-        """Encrypt file data using AES-GCM."""
-        aesgcm = AESGCM(key)
-        nonce = os.urandom(12)
-        ciphertext = aesgcm.encrypt(nonce, file_data, None)
-        return nonce, ciphertext
-
-    @staticmethod
-    def decrypt_file(nonce: bytes, ciphertext: bytes, key: bytes) -> bytes:
-        """Decrypt file data using AES-GCM."""
-        aesgcm = AESGCM(key)
-        return aesgcm.decrypt(nonce, ciphertext, None)
-
-    @staticmethod
     def create_pac(
         file_id: str,
         recipient_id: str,
@@ -112,3 +128,4 @@ class CryptoUtils:
             return True
         except Exception:
             return False 
+        

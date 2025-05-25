@@ -6,7 +6,7 @@
 <div class="row">
     <div class="col-md-6 offset-md-3">
         <h2>Upload File</h2>
-        <form method="POST" enctype="multipart/form-data">
+        <form method="POST" enctype="multipart/form-data" action="{{ url_for('file.upload_file') }}">
             <div class="mb-3">
                 <label for="file" class="form-label">Select File</label>
                 <input type="file" class="form-control" id="file" name="file" required>
@@ -16,7 +16,8 @@
                 <input type="text" class="form-control" id="recipients" name="recipients" placeholder="username1, username2, ...">
             </div>
             <button type="submit" class="btn btn-primary">Upload and Share</button>
+            <a href="{{ url_for('dashboard.dashboard') }}" class="btn btn-secondary">Back to Dashboard</a>
         </form>
     </div>
 </div>
-{% endblock %} 
+{% endblock %}
