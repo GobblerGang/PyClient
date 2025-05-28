@@ -26,13 +26,15 @@ class User(UserMixin, db.Model):
     opks_json = db.Column(db.Text)  # Store list of base64 public keys as JSON
     # Relationships
     files = db.relationship('File', backref='owner', lazy=True)
-    shared_files = db.relationship('File', secondary=file_shares, lazy='subquery',
-        backref=db.backref('shared_with', lazy=True))
-
+    
 class File(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     filename = db.Column(db.String(255), nullable=False)
-    original_filename = db.Column(db.String(255), nullable=False)
     upload_date = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     mime_type = db.Column(db.String(127), nullable=True)
+    
+    file_nonce = db.Column(db.String(44))  # Nonce for file encryption
+    k_file_encrypted = db.Column(db.String(255))  # Encrypted file key
+    k_file_nonce = db.Column(db.String(44))  # Nonce for file key encryption
+    
+    owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)

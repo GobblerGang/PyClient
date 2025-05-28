@@ -91,6 +91,7 @@ class CryptoUtils:
         recipient_id: str,
         issuer_id: str,
         encrypted_file_key: bytes,
+        encrypted_file_key_nonce: bytes,
         sender_ephemeral_pubkey: bytes,
         valid_until: int,
         identity_key: ed25519.Ed25519PrivateKey
@@ -101,6 +102,7 @@ class CryptoUtils:
             "recipient_id": recipient_id,
             "issuer_id": issuer_id,
             "encrypted_file_key": base64.b64encode(encrypted_file_key).decode(),
+            "encrypted_file_key_nonce": base64.b64encode(encrypted_file_key_nonce).decode(),
             "sender_ephemeral_pubkey": base64.b64encode(sender_ephemeral_pubkey).decode(),
             "valid_until": valid_until,
             "revoked": False

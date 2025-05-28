@@ -12,6 +12,7 @@ from utils.key_utils import (
     try_decrypt_private_keys, verify_decrypted_keys, generate_user_vault, decrypt_all_opks, keypairs_from_opk_bytes,
     get_user_vault, derive_master_key_from_login, b64e
 )
+from utils.secure_master_key import MasterKey
 
 bp_auth = Blueprint('auth', __name__)
 
@@ -64,11 +65,10 @@ def signup():
         
         # Take password input
         password = request.form.get('password')
-        
         # generate a salt
         salt = os.urandom(16)
-        master_key = CryptoUtils.derive_master_key(password, salt)
-        
+        master_key = MasterKey().derive_key(password, salt)
+        MasterKey().set_key(master_key)
         # generate identity keypair, signed prekey pair
         identity_private, identity_public = CryptoUtils.generate_identity_keypair()
         spk_private, spk_public, spk_signature = CryptoUtils.generate_signed_prekey(identity_private)
@@ -81,6 +81,7 @@ def signup():
         create_user(username, email, vault)
         
         flash('Registration successful! Please login.')
+        MasterKey().clear()
         return redirect(url_for('auth.login'))
     return render_template('signup.html')
 
@@ -95,17 +96,21 @@ def login():
             return render_template('login.html')
         vault = get_user_vault(user)
         try:
-            master_key = derive_master_key_from_login(password, vault["salt"])
-            print("Master key derived successfully")
+            salt = base64.b64decode(vault["salt"])
+            master_key = MasterKey().derive_key(password, salt)
+            MasterKey().set_key(master_key)
+            # print("Master key derived and set successfully")
             
             identity_private_bytes, spk_private_bytes = try_decrypt_private_keys(vault, master_key)
-            print("Private keys decrypted successfully")
+            # print("Private keys decrypted successfully")
             
             if not verify_decrypted_keys(identity_private_bytes, spk_private_bytes, vault):
                 flash('Key mismatch! Vault or server data corrupted.')
+                MasterKey().clear()
                 return render_template('login.html')
         except Exception:
             flash('Failed to decrypt keys. Wrong password?')
+            MasterKey().clear()
             return render_template('login.html')
         flash('Login successful!')
         login_user(user)
@@ -115,6 +120,7 @@ def login():
 @bp_auth.route('/logout')
 def logout():
     logout_user()
+    MasterKey().clear()
     return redirect(url_for('main.index'))
 
 @bp_auth.route('/change_password', methods=['GET', 'POST'])
@@ -128,14 +134,18 @@ def change_password():
         user = User.query.get(current_user.id)
         vault = get_user_vault(user)
         try:
-            old_master_key = derive_master_key_from_login(old_password, vault["salt"])
+            old_salt = base64.b64decode(vault["salt"])
+            old_master_key = MasterKey().derive_key(old_password, old_salt)
+            MasterKey().set_key(old_master_key)
             identity_private_bytes, spk_private_bytes = try_decrypt_private_keys(vault, old_master_key)
             decrypted_opks = decrypt_all_opks(user.opks_json, old_master_key)
         except Exception:
             flash('Old password is incorrect.')
+            MasterKey().clear()
             return render_template('change_password.html')
         new_salt = os.urandom(16)
-        new_master_key = CryptoUtils.derive_master_key(new_password, new_salt)
+        new_master_key = MasterKey().derive_key(new_password, new_salt)
+        MasterKey().set_key(new_master_key)
         from cryptography.hazmat.primitives.asymmetric import ed25519, x25519
         identity_private = ed25519.Ed25519PrivateKey.from_private_bytes(identity_private_bytes)
         spk_private = x25519.X25519PrivateKey.from_private_bytes(spk_private_bytes)
@@ -160,5 +170,6 @@ def change_password():
         user.opks_json = json.dumps(new_vault["opks"])
         db.session.commit()
         flash('Password changed successfully!')
+        MasterKey().clear()
         return redirect(url_for('dashboard.dashboard'))
     return render_template('change_password.html')

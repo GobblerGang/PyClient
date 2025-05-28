@@ -3,6 +3,7 @@ import json
 from cryptography.hazmat.primitives.asymmetric import ed25519, x25519
 from cryptography.hazmat.primitives import serialization
 from utils.crypto_utils import CryptoUtils
+from utils.secure_master_key import MasterKey
 
 def b64e(b):
     return base64.b64encode(b).decode()
@@ -21,7 +22,7 @@ def get_user_vault(user):
 
 def derive_master_key_from_login(password: str, salt_b64: str) -> bytes:
     salt = base64.b64decode(salt_b64)
-    return CryptoUtils.derive_master_key(password, salt)
+    return MasterKey().derive_key(password, salt)
 
 def try_decrypt_private_keys(vault: dict, master_key: bytes):
     ik_enc = base64.b64decode(vault["identity_key_private_enc"])

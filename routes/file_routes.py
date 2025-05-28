@@ -3,56 +3,133 @@ from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
 from datetime import datetime
 import os
-from models.models import File, User
+from models.models import File
 from extensions.extensions import db
 from utils.crypto_utils import CryptoUtils
+from utils.secure_master_key import MasterKey
+import requests
+import mimetypes
+import utils.server_utils as server
+import base64
 
 bp_file = Blueprint('file', __name__)
-
+ 
 # --- Helper functions ---
-def save_encrypted_file(file, owner_id):
-    file_key = os.urandom(32)
-    file_data = file.read()
-    nonce, encrypted_data = CryptoUtils.encrypt_with_key(file_data, file_key)
-    filename = secure_filename(file.filename)
-    unique_filename = f"{filename}"
-    file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], unique_filename)
-    with open(file_path, 'wb') as f:
-        f.write(nonce + encrypted_data)
-    new_file = File(
-        filename=unique_filename,
-        original_filename=filename,
+
+def create_file_record(file_id, owner_id, k_file_encrypted, filename, file_nonce, k_file_nonce, mime_type):
+    file_record = File(
+        id=file_id,
         owner_id=owner_id,
-        mime_type=file.content_type
+        k_file_encrypted=k_file_encrypted,
+        filename=filename,
+        file_nonce=file_nonce,
+        k_file_nonce=k_file_nonce,
+        mime_type=mime_type
     )
-    db.session.add(new_file)
+    db.session.add(file_record)
     db.session.commit()
-    return new_file
-
-def get_owned_and_shared_files(user):
-    owned_files = File.query.filter_by(owner_id=user.id).all()
-    shared_files = user.shared_files
-    return owned_files, shared_files
-
-def share_file_with_user(file, username):
-    user = User.query.filter_by(username=username).first()
-    if not user:
-        return 'User not found', None
-    if user.id == current_user.id:
-        return 'Cannot share with yourself', None
-    # Sharing logic placeholder
-    return None, user
+    return file_record
 
 def revoke_file_access(file, user_id):
     # Revocation logic placeholder
     return True
 
+def upload(file_storage):
+    # Read file data directly from the FileStorage object
+    file_data = file_storage.read()
+    file_storage.seek(0)  # Reset pointer in case it's needed elsewhere
+    k_file = os.urandom(32)
+    file_id = str(int(datetime.now().timestamp()))
+    file_nonce, ciphertext = CryptoUtils.encrypt_with_key(file_data, k_file, file_id.encode())
+    k_file_nonce, enc_k_file = CryptoUtils.encrypt_with_key(k_file, MasterKey().get_key())
+    filename = secure_filename(file_storage.filename)
+    mime_type, _ = mimetypes.guess_type(filename)
+    create_file_record(
+        file_id=file_id,
+        owner_id=current_user.id,
+        filename=filename,
+        k_file_encrypted=enc_k_file,
+        file_nonce=file_nonce,
+        k_file_nonce=k_file_nonce,
+        mime_type=mime_type
+    )
+    
+    server.upload_file(
+        file_id=file_id,
+        file_name=filename,
+        file_ciphertext=ciphertext,
+        owner_id=current_user.id,
+        mime_type=mime_type,
+        file_nonce=file_nonce
+    )
+    return
+
+def get_owned_and_shared_files(user):
+    return [], []  # Placeholder for owned and shared files
+
+def share_file_with_user(file: File, username: str):
+    user_to_share = server.get_user_by_name(username)
+    if not user_to_share:
+        return "User not found", None
+    k_file = CryptoUtils.decrypt_with_key(
+        file.k_file_nonce,
+        file.k_file_encrypted,
+        MasterKey().get_key()
+    )
+    if not k_file:
+        return "Failed to decrypt file key", None
+    # Retrieve sender's keys from vault
+    from utils.key_utils import get_user_vault, try_decrypt_private_keys
+    sender_vault = get_user_vault(current_user)
+    sender_identity_private_bytes, _ = try_decrypt_private_keys(sender_vault, MasterKey().get_key())
+    from cryptography.hazmat.primitives.asymmetric import ed25519, x25519
+    from cryptography.hazmat.primitives import serialization
+    sender_identity_private = ed25519.Ed25519PrivateKey.from_private_bytes(sender_identity_private_bytes)
+    sender_identity_public = sender_identity_private.public_key()
+    sender_ephemeral_private = x25519.X25519PrivateKey.generate()
+    sender_ephemeral_public = sender_ephemeral_private.public_key()
+    # Retrieve recipient keys from server utils
+    recipient_keys = server.get_recipient_keys(user_to_share.id)
+    if not recipient_keys:
+        return "Recipient keys not found", None
+    import base64
+    recipient_identity_public_bytes = base64.b64decode(recipient_keys["identity_key_public"])
+    recipient_signed_prekey_public_bytes = base64.b64decode(recipient_keys["signed_prekey_public"])
+    recipient_identity_public = x25519.X25519PublicKey.from_public_bytes(recipient_identity_public_bytes)
+    recipient_signed_prekey_public = x25519.X25519PublicKey.from_public_bytes(recipient_signed_prekey_public_bytes)
+    # Perform 3XDH
+    shared_key = CryptoUtils.perform_3xdh(
+        sender_ephemeral_private,
+        sender_ephemeral_public,
+        sender_ephemeral_private,
+        sender_ephemeral_public,
+        recipient_identity_public,
+        recipient_signed_prekey_public,
+        sender_ephemeral_public
+    )
+    # Encrypt k_file with derived shared key
+    enc_k_file_nonce, enc_k_file = CryptoUtils.encrypt_with_key(k_file, shared_key)
+    # PAC creation
+    valid_until = None  # Set as needed
+    pac = CryptoUtils.create_pac(
+        file_id=file.id,
+        recipient_id=user_to_share.id,
+        issuer_id=current_user.id,
+        encrypted_file_key=enc_k_file,
+        encrypted_file_key_nonce=enc_k_file_nonce,
+        sender_ephemeral_pubkey=sender_ephemeral_public.public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw
+        ),
+        valid_until=valid_until,
+        identity_key=sender_identity_private
+    )
+    # Send PAC to server (now takes the pac object)
+    server.send_pac(pac)
+    return None, user_to_share
+
 def delete_file_from_storage_and_db(file):
-    file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], file.filename)
-    if os.path.exists(file_path):
-        os.remove(file_path)
-    db.session.delete(file)
-    db.session.commit()
+    return db.session.delete(file) and db.session.commit()  # Placeholder for deletion logic
 
 # --- Routes ---
 @bp_file.route('/upload', methods=['GET', 'POST'])
@@ -67,7 +144,7 @@ def upload_file():
             flash('No file selected')
             return redirect(request.url)
         if file:
-            save_encrypted_file(file, current_user.id)
+            upload(file)
             flash('File uploaded successfully')
             return redirect(url_for('dashboard.dashboard'))
     return render_template('upload.html')
@@ -87,12 +164,9 @@ def share_file(file_id):
         return redirect(url_for('file.list_files'))
     if request.method == 'POST':
         username = request.form.get('username')
-        error, user = share_file_with_user(file, username)
-        if error:
-            flash(error)
-        else:
-            flash(f'File shared with {username}')
-            return redirect(url_for('file.list_files'))
+        share_file_with_user(file, username)
+        flash(f'File shared with {username}')
+        return redirect(url_for('file.list_files'))
     return render_template('share.html', file=file)
 
 @bp_file.route('/revoke/<int:file_id>/<int:user_id>')
