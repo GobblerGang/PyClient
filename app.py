@@ -1,10 +1,10 @@
 from flask import Flask
 import os
 from extensions.extensions import db, login_manager
-from models.models import User, File
-from routes.auth_routes import bp_auth
-from routes.dashboard_routes import bp_dashboard
-from routes.file_routes import bp_file
+# from models.models import User, File
+# from routes.auth_routes import bp_auth
+# from routes.dashboard_routes import bp_dashboard
+# from routes.file_routes import bp_file
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.urandom(24)

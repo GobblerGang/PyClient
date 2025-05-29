@@ -153,7 +153,9 @@ class CryptoUtils:
         encrypted_file_key_nonce: bytes,
         sender_ephemeral_pubkey: bytes,
         valid_until: int,
-        identity_key: ed25519.Ed25519PrivateKey
+        identity_key: ed25519.Ed25519PrivateKey,
+        filename: str,
+        mime_type: str
     ) -> PAC:
         """Create a Privilege Attribute Certificate (PAC) and return as PAC object."""
         pac_dict = {
@@ -164,7 +166,9 @@ class CryptoUtils:
             "encrypted_file_key_nonce": base64.b64encode(encrypted_file_key_nonce).decode(),
             "sender_ephemeral_pubkey": base64.b64encode(sender_ephemeral_pubkey).decode(),
             "valid_until": valid_until,
-            "revoked": False
+            "revoked": False,
+            "filename": filename,
+            "mime_type": mime_type
         }
         # Create signature
         message = json.dumps(pac_dict, sort_keys=True).encode()
@@ -178,20 +182,20 @@ class CryptoUtils:
             encrypted_file_key=pac_dict["encrypted_file_key"],
             signature=pac_dict["signature"],
             issuer_id=issuer_id,
-            sender_ephemeral_public=pac_dict["sender_ephemeral_pubkey"]
+            sender_ephemeral_public=pac_dict["sender_ephemeral_pubkey"],
+            k_file_nonce=pac_dict["encrypted_file_key_nonce"],
+            filename=filename,
+            mime_type=mime_type
         )
 
     @staticmethod
-    def verify_pac(pac: Dict[str, Any], issuer_public_key: ed25519.Ed25519PublicKey) -> bool:
-        """Verify a PAC's signature."""
+    def verify_pac(pac: dict, issuer_public_key: ed25519.Ed25519PublicKey) -> bool:
+        """Verify a PAC's signature, including metadata."""
         try:
-            # Extract signature and create message
             signature = base64.b64decode(pac["signature"])
             pac_copy = pac.copy()
             del pac_copy["signature"]
             message = json.dumps(pac_copy, sort_keys=True).encode()
-            
-            # Verify signature
             issuer_public_key.verify(signature, message)
             return True
         except Exception:

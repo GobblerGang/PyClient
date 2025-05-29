@@ -45,9 +45,22 @@ def create_user(username, email, vault):
         "signed_prekey_private_nonce": vault["signed_prekey_private_nonce"],
         "opks_json": json.dumps(vault["opks"])
     }
-    uuid = server.create_user(user_data)
+    response = server.create_user(user_data)
+    if not response or not isinstance(response, dict):
+        flash('No response from server. Please try again later.')
+        return None
+
+    if response.get("success"):
+        uuid = response.get("uuid")
+    else:
+        error_msg = response.get("error", "Unknown error")
+        flash(error_msg)
+        return None
+
     if not uuid:
-        return None  # User creation failed on the server
+        flash('User creation failed. Please try again.')
+        return None
+    
     user = User(
         username=username,
         email=email,
@@ -98,8 +111,8 @@ def signup():
         # Sends user info to server and stores user in local database
         if not create_user(username, email, vault):
             flash('Failed to create user. Server may be down or busy.')
+            MasterKey().clear()
             return redirect(url_for('auth.signup'))
-        
         
         flash('Registration successful! Please login.')
         MasterKey().clear()

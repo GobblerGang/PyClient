@@ -26,16 +26,16 @@ class User(UserMixin, db.Model):
     # Add OPKs as a JSON string field
     opks_json = db.Column(db.Text)  # Store list of base64 public keys as JSON
     # Relationships
-    files = db.relationship('File', backref='owner', lazy=True)
+#     files = db.relationship('File', backref='owner', lazy=True)
     
-class File(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    filename = db.Column(db.String(255), nullable=False)
-    upload_date = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    mime_type = db.Column(db.String(127), nullable=True)
+# class File(db.Model):
+#     id = db.Column(db.Integer, primary_key=True)
+#     uuid = db.Column(db.String(36), unique=True, nullable=False)  # UUID for file identification
+#     filename = db.Column(db.String(255), nullable=False)
+#     upload_date = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+#     mime_type = db.Column(db.String(127), nullable=True)
+#     file_nonce = db.Column(db.String(44))  # Nonce for file encryption
+#     k_file_encrypted = db.Column(db.String(255))  # Encrypted file key
+#     k_file_nonce = db.Column(db.String(44))  # Nonce for file key encryption
     
-    file_nonce = db.Column(db.String(44))  # Nonce for file encryption
-    k_file_encrypted = db.Column(db.String(255))  # Encrypted file key
-    k_file_nonce = db.Column(db.String(44))  # Nonce for file key encryption
-    
-    owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+#     owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
