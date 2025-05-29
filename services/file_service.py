@@ -16,7 +16,7 @@ class FileDownloadError(Exception):
     pass
 
 def revoke_file_access(file, user_id):
-    # Revocation logic placeholder
+    # TODO: Implement the logic to revoke file access for the specified user.
     return True
 
 def upload_file_service(file_storage, user, master_key):
@@ -118,10 +118,8 @@ def share_file_with_user_service(file_info, username: str, user, master_key):
     server.send_pac(pac.to_dict())
     return None, user_to_share
 
-def delete_file_from_storage_and_db(file):
-    # NOTE: not deleting from server, needs to change
-    db.session.delete(file)
-    db.session.commit()
+def delete_file_(file):
+    # NOTE: needs to be implemented
     return
 
 def refresh_pacs_service(user, private_key):
@@ -155,12 +153,15 @@ def download_file_service(file_uuid, pacs, user, master_key):
     if not requested_file_pac:
         raise FileDownloadError('File not found or access denied')
     owner_keys = server.get_user_keys(requested_file_pac.issuer_id)
+    
     if not owner_keys:
         raise FileDownloadError('Owner keys not found')
+    
     # Verify PAC signature before proceeding
     owner_ed25519_pub = ed25519.Ed25519PublicKey.from_public_bytes(base64.b64decode(owner_keys["identity_key_public"]))
     if not CryptoUtils.verify_pac(requested_file_pac.to_dict(), owner_ed25519_pub):
         raise FileDownloadError('PAC signature verification failed')
+    
     owner_identity_public = load_x25519_public_key(owner_keys["identity_key_public"])
     identity_private, signed_prekey_private = get_user_x25519_private_keys(user, master_key)
     shared_key = CryptoUtils.perform_3xdh_recipient(

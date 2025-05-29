@@ -116,7 +116,7 @@ def delete_file(file_uuid):
         flash('You do not have permission to delete this file')
         return redirect(url_for('file.list_files'))
     try:
-        delete_file_from_storage_and_db(file)
+        delete_file_(file)
         flash('File deleted successfully')
     except Exception as e:
         flash(f'Error deleting file: {str(e)}')
