@@ -35,7 +35,8 @@ def upload_file():
 @login_required
 def list_files():
     try:
-        owned_files, received_pacs, issued_pacs=refresh_all_files_service(current_user, MasterKey().get())
+        master_key = MasterKey().get()
+        owned_files, received_pacs, issued_pacs=refresh_all_files_service(current_user, current_user.get_identity_private_key(master_key))
     except Exception as e:
         flash(f'Error refreshing file info: {str(e)}')
     return render_template('files.html', owned_files=owned_files, shared_files=received_pacs)
@@ -57,7 +58,8 @@ def share_file(file_uuid):
         username = request.form.get('username')
         master_key = MasterKey().get()
         try:
-            error, user_to_share = share_file_with_user_service(file, username, current_user, master_key)
+            identity_private_key = current_user.get_identity_private_key(master_key)
+            error, user_to_share = share_file_with_user_service(file, username, current_user, identity_private_key)
             if error:
                 flash(error)
             else:
@@ -70,7 +72,8 @@ def share_file(file_uuid):
 @bp_file.route('/revoke/<file_uuid>/<user_uuid>')
 @login_required
 def revoke_access(file_uuid, user_uuid):
-    _, issued_pacs = refresh_pacs_service(current_user, MasterKey().get())
+    master_key = MasterKey().get()
+    _, issued_pacs = refresh_pacs_service(current_user, current_user.get_identity_private_key(master_key))
     file = next((f for f in issued_pacs if f.file_uuid == file_uuid), None)
     
     if file.owner_id != current_user.uuid:
@@ -87,9 +90,9 @@ def revoke_access(file_uuid, user_uuid):
 @login_required
 def download_file(file_uuid):
     try:
-        received_pacs, _ = refresh_pacs_service(current_user, MasterKey().get())
         master_key = MasterKey().get()
-        file_data, filename, mime_type = download_file_service(file_uuid, received_pacs, current_user, master_key)
+        received_pacs, _ = refresh_pacs_service(current_user, current_user.get_identity_private_key(master_key))
+        file_data, filename, mime_type = download_file_service(file_uuid, received_pacs, current_user, current_user.get_identity_private_key(master_key))
         return send_file(
             io.BytesIO(file_data),
             as_attachment=True,

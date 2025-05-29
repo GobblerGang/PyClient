@@ -20,9 +20,6 @@ def get_user_vault(user):
         "signed_prekey_private_nonce": user.signed_prekey_private_nonce
     }
 
-def derive_master_key_from_login(password: str, salt_b64: str) -> bytes:
-    salt = base64.b64decode(salt_b64)
-    return MasterKey().derive_key(password, salt)
 
 def try_decrypt_private_keys(vault: dict, master_key: bytes):
     ik_enc = base64.b64decode(vault["identity_key_private_enc"])
