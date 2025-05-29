@@ -14,6 +14,7 @@ from utils.key_utils import (
 )
 from utils.secure_master_key import MasterKey
 from session_manager import clear_session
+import utils.server_utils as server
 
 bp_auth = Blueprint('auth', __name__)
 
@@ -31,7 +32,22 @@ def email_exists(email):
     return User.query.filter_by(email=email).first() is not None
 
 def create_user(username, email, vault):
-    import json
+    user_data = {
+        "username": username,
+        "email": email,
+        "identity_key_public": vault["identity_key_public"],
+        "signed_prekey_public": vault["signed_prekey_public"],
+        "signed_prekey_signature": vault["signed_prekey_signature"],
+        "salt": vault["salt"],
+        "identity_key_private_enc": vault["identity_key_private_enc"],
+        "identity_key_private_nonce": vault["identity_key_private_nonce"],
+        "signed_prekey_private_enc": vault["signed_prekey_private_enc"],
+        "signed_prekey_private_nonce": vault["signed_prekey_private_nonce"],
+        "opks_json": json.dumps(vault["opks"])
+    }
+    uuid = server.create_user(user_data)
+    if not uuid:
+        return None  # User creation failed on the server
     user = User(
         username=username,
         email=email,
@@ -43,7 +59,8 @@ def create_user(username, email, vault):
         identity_key_private_nonce=vault["identity_key_private_nonce"],
         signed_prekey_private_enc=vault["signed_prekey_private_enc"],
         signed_prekey_private_nonce=vault["signed_prekey_private_nonce"],
-        opks_json=json.dumps(vault["opks"])
+        opks_json=json.dumps(vault["opks"]),
+        uuid= uuid
     )
     db.session.add(user)
     db.session.commit()
@@ -78,8 +95,11 @@ def signup():
         
         vault = generate_user_vault(identity_private, identity_public, spk_private, spk_public, spk_signature, salt, master_key, opks)
         
-        # Store vault in User model
-        create_user(username, email, vault)
+        # Sends user info to server and stores user in local database
+        if not create_user(username, email, vault):
+            flash('Failed to create user. Server may be down or busy.')
+            return redirect(url_for('auth.signup'))
+        
         
         flash('Registration successful! Please login.')
         MasterKey().clear()

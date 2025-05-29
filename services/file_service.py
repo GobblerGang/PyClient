@@ -135,14 +135,19 @@ def refresh_pacs_service(user):
     pacs = [PAC.from_json(pac) for pac in pacs_json]
     return pacs
 
-def refresh_shared_file_info_service(pacs):
-    file_ids = [pac.file_id for pac in pacs]
-    file_info_json = server.get_shared_file_info(file_ids)
-    return [FileInfo.from_dict(info) for info in file_info_json]
+def refresh_user_file_info_service(user):
+    """
+    Retrieve both owned and shared file info for the user.
+    Returns (owned_files, shared_files) as lists of FileInfo objects.
+    """
+    file_info_dict = server.get_user_file_info(user.id)
+    owned_files = [FileInfo.from_dict(info) for info in file_info_dict.get('owned_files', [])]
+    shared_files = [FileInfo.from_dict(info) for info in file_info_dict.get('shared_files', [])]
+    return owned_files, shared_files
 
-def refresh_owned_file_info_service(user):
-    owned_files_json = server.get_owned_file_info(user.id)
-    return [FileInfo.from_dict(info) for info in owned_files_json]
+# def refresh_owned_file_info_service(user):
+#     owned_files_json = server.get_user_file_info(user.id)
+#     return [FileInfo.from_dict(info) for info in owned_files_json]
 
 def download_file_service(file_id, pacs, user, master_key):
     """Download a file. Requires PACs, user object, and master key."""
@@ -162,7 +167,7 @@ def download_file_service(file_id, pacs, user, master_key):
         one_time_prekey_private=None
     )
     k_file = CryptoUtils.decrypt_with_key(
-        requested_file_pac.nonce,
+        requested_file_pac.k_file_nonce,
         requested_file_pac.encrypted_file_key,
         shared_key
     )
@@ -175,7 +180,7 @@ def download_file_service(file_id, pacs, user, master_key):
     if not file_data:
         raise FileDownloadError('File data not found')
     file_data = base64.b64decode(file_data)
-    file_nonce = file_response.get('nonce')
+    file_nonce = file_response.get('file_nonce')
     if not file_nonce:
         raise FileDownloadError('File nonce not found')
     decrypted_file_data = CryptoUtils.decrypt_with_key(file_nonce, file_data, k_file)

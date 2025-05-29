@@ -4,7 +4,7 @@ from models.models import File
 from utils.dataclasses import *
 from services.file_service import (
     upload_file_service, share_file_with_user_service, revoke_file_access, delete_file_from_storage_and_db, download_file_service, FileDownloadError,
-    refresh_owned_file_info_service, refresh_shared_file_info_service
+    refresh_pacs_service, refresh_user_file_info_service
 )
 from utils.secure_master_key import MasterKey
 from session_manager import get_pacs_from_session
@@ -38,9 +38,7 @@ def upload_file():
 @login_required
 def list_files():
     try:
-        owned_files = refresh_owned_file_info_service(current_user)
-        shared_pacs = get_pacs_from_session()
-        shared_files = refresh_shared_file_info_service(shared_pacs)
+        owned_files, shared_files = refresh_user_file_info_service(current_user)
         session['owned_file_info'] = [f.to_dict() for f in owned_files]
         session['shared_file_info'] = [f.to_dict() for f in shared_files]
     except Exception as e:
@@ -88,7 +86,8 @@ def revoke_access(file_id, user_id):
 @login_required
 def download_file(file_id):
     try:
-        pacs = get_pacs_from_session()
+        pacs = refresh_pacs_service(current_user)
+        # pacs = get_pacs_from_session()
         master_key = MasterKey().get()
         file_data, filename, mime_type = download_file_service(file_id, pacs, current_user, master_key)
         return send_file(

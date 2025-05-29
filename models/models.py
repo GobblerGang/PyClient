@@ -11,6 +11,7 @@ file_shares = db.Table('file_shares',
 
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    uuid = db.Column(db.String(36), unique=True, nullable=False)  # UUID for user identification
     username = db.Column(db.String(80), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     identity_key_public = db.Column(db.String(255))  # Base64 encoded public key
