@@ -177,7 +177,7 @@ class CryptoUtils:
         # Return as PAC object
         return PAC(
             recipient_id=recipient_id,
-            file_id=file_id,
+            file_uuid=file_id,
             valid_until=valid_until,
             encrypted_file_key=pac_dict["encrypted_file_key"],
             signature=pac_dict["signature"],

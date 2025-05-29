@@ -8,7 +8,6 @@ from utils.key_utils import get_user_vault, try_decrypt_private_keys
 import utils.server_utils as server
 from utils.dataclasses import PAC, FileInfo
 from cryptography.hazmat.primitives.asymmetric import ed25519, x25519
-import base64
 from cryptography.hazmat.primitives import serialization
 import base64
 import session_manager
@@ -32,8 +31,9 @@ def upload_file_service(file_storage, user, master_key):
     mime_type, _ = mimetypes.guess_type(filename)
     # Only upload to server, do not create a local DB record
     response = server.upload_file(
-        file_name=filename,
         file_ciphertext=ciphertext,
+        file_name=filename,
+        file_uuid=None,  # Set to None or generate if required
         owner_id=user.uuid,
         mime_type=mime_type,
         file_nonce=file_nonce,
@@ -124,9 +124,8 @@ def delete_file_from_storage_and_db(file):
     db.session.commit()
     return
 
-def refresh_pacs_service(user):
-    pacs_json = server.get_user_pacs(user.uuid)
-    
+def refresh_pacs_service(user, private_key):
+    pacs_json = server.get_user_pacs(user.uuid, private_key)
     received_pacs_json = pacs_json.get('received_pacs', [])
     
     received_pacs = [PAC.from_json(pac) for pac in received_pacs_json]
@@ -137,20 +136,14 @@ def refresh_pacs_service(user):
     
     return received_pacs, issued_pacs
 
-# def refresh_user_file_info_service(user):
-#     file_info_dict = server.get_user_file_info(user.uuid)
-#     owned_files = [FileInfo.from_dict(info) for info in file_info_dict.get('owned_files', [])]
-#     shared_files = [FileInfo.from_dict(info) for info in file_info_dict.get('shared_files', [])]
-#     return owned_files, shared_files
 
-def refresh_owned_file_service(user):
-    owned_files_json = server.get_owned_files(user.uuid)
+def refresh_owned_file_service(user, private_key):
+    owned_files_json = server.get_owned_files(user.uuid, private_key)
     return [FileInfo.from_dict(info) for info in owned_files_json]
 
-def refresh_all_files_service(user):
-    owned_files = refresh_owned_file_service(user)
-    received_pacs, issued_pacs = refresh_pacs_service(user)
-        
+def refresh_all_files_service(user, private_key):
+    owned_files = refresh_owned_file_service(user, private_key)
+    received_pacs, issued_pacs = refresh_pacs_service(user, private_key)
     session_manager.set_session_value('owned_file_info', [f.to_dict() for f in owned_files])
     session_manager.set_session_value('received_pacs', [pac.to_dict() for pac in received_pacs])
     session_manager.set_session_value('issued_pacs', [pac.to_dict() for pac in issued_pacs])

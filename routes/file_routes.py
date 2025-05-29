@@ -35,7 +35,7 @@ def upload_file():
 @login_required
 def list_files():
     try:
-        owned_files, received_pacs, issued_pacs=refresh_all_files_service(current_user)
+        owned_files, received_pacs, issued_pacs=refresh_all_files_service(current_user, MasterKey().get())
     except Exception as e:
         flash(f'Error refreshing file info: {str(e)}')
     return render_template('files.html', owned_files=owned_files, shared_files=received_pacs)
@@ -44,7 +44,7 @@ def list_files():
 @login_required
 def share_file(file_uuid):
     # file = File.query.filter_by(uuid=file_uuid).first_or_404()
-    owned_files = refresh_owned_file_service(current_user)
+    owned_files = refresh_owned_file_service(current_user,MasterKey().get())
     file = next((f for f in owned_files if f.uuid == file_uuid), None)
     if not file:
         flash('File not found')
@@ -70,7 +70,7 @@ def share_file(file_uuid):
 @bp_file.route('/revoke/<file_uuid>/<user_uuid>')
 @login_required
 def revoke_access(file_uuid, user_uuid):
-    _, issued_pacs = refresh_pacs_service(current_user)
+    _, issued_pacs = refresh_pacs_service(current_user, MasterKey().get())
     file = next((f for f in issued_pacs if f.file_uuid == file_uuid), None)
     
     if file.owner_id != current_user.uuid:
@@ -87,9 +87,9 @@ def revoke_access(file_uuid, user_uuid):
 @login_required
 def download_file(file_uuid):
     try:
-        pacs = refresh_pacs_service(current_user)
+        received_pacs, _ = refresh_pacs_service(current_user, MasterKey().get())
         master_key = MasterKey().get()
-        file_data, filename, mime_type = download_file_service(file_uuid, pacs, current_user, master_key)
+        file_data, filename, mime_type = download_file_service(file_uuid, received_pacs, current_user, master_key)
         return send_file(
             io.BytesIO(file_data),
             as_attachment=True,
@@ -106,13 +106,13 @@ def download_file(file_uuid):
 @bp_file.route('/delete/<file_uuid>')
 @login_required
 def delete_file(file_uuid):
-    owned_files = refresh_owned_file_service(current_user)
+    owned_files = refresh_owned_file_service(current_user, MasterKey().get())
     file = next((f for f in owned_files if f.uuid == file_uuid), None)
     if not file:
         flash('File not found')
         return redirect(url_for('file.list_files'))
     
-    if file.owner_id != current_user.id:
+    if file.owner_id != current_user.uuid:
         flash('You do not have permission to delete this file')
         return redirect(url_for('file.list_files'))
     try:

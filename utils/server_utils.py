@@ -45,7 +45,7 @@ def get_user_by_name(user_name: str):
     }
     If the user is not found, it returns None.
     """
-    return ""
+    return None
 
 def upload_file(file_ciphertext: bytes, file_name: str, file_uuid: str, owner_id: str, **args):
     """
