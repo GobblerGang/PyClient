@@ -10,7 +10,7 @@ from extensions.extensions import login_manager, db
 from utils.crypto_utils import CryptoUtils
 from utils.key_utils import (
     try_decrypt_private_keys, verify_decrypted_keys, generate_user_vault, decrypt_all_opks, keypairs_from_opk_bytes,
-    get_user_vault, derive_master_key_from_login, b64e
+    get_user_vault
 )
 from utils.secure_master_key import MasterKey
 from session_manager import clear_session
@@ -126,6 +126,12 @@ def login():
         password = request.form.get('password')
         user = User.query.filter_by(username=username).first()
         if not user:
+            #TODO: Check server for user existence
+            user = server.get_user_by_name(username)
+            if user:
+                flash('User found on server, but not in local database. Please import your key bundle.')
+                # TODO: Implement import logic
+                return redirect(url_for('auth.import_keys'))
             flash('User not found')
             return render_template('login.html')
         vault = get_user_vault(user)
@@ -180,7 +186,7 @@ def change_password():
         new_salt = os.urandom(16)
         new_master_key = MasterKey().derive_key(new_password, new_salt)
         MasterKey().set_key(new_master_key)
-        from cryptography.hazmat.primitives.asymmetric import ed25519, x25519
+        
         identity_private = ed25519.Ed25519PrivateKey.from_private_bytes(identity_private_bytes)
         spk_private = x25519.X25519PrivateKey.from_private_bytes(spk_private_bytes)
         opk_keypairs = keypairs_from_opk_bytes(decrypted_opks)
