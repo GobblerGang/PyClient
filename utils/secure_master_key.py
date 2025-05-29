@@ -22,7 +22,7 @@ class MasterKey:
         with self._lock:
             self._key = key
     
-    def get_key(self) -> bytes:
+    def get(self) -> bytes:
         """Retrieve key. Raises if not set."""
         with self._lock:
             if self._key is None:

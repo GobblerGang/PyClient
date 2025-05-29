@@ -13,6 +13,7 @@ from utils.key_utils import (
     get_user_vault, derive_master_key_from_login, b64e
 )
 from utils.secure_master_key import MasterKey
+from session_manager import clear_session
 
 bp_auth = Blueprint('auth', __name__)
 
@@ -120,7 +121,7 @@ def login():
 @bp_auth.route('/logout')
 def logout():
     logout_user()
-    MasterKey().clear()
+    clear_session()
     return redirect(url_for('main.index'))
 
 @bp_auth.route('/change_password', methods=['GET', 'POST'])

@@ -7,6 +7,7 @@ import base64
 from argon2.low_level import Type, hash_secret_raw
 from typing import Tuple, Dict, Any
 from secrets import token_bytes
+from utils.dataclasses import PAC
 
 class CryptoUtils:
     @staticmethod
@@ -56,33 +57,91 @@ class CryptoUtils:
         signature = identity_key.sign(public_bytes)
         return private_key, public_key, signature
 
+    # @staticmethod
+    # def perform_3xdh(
+    #     identity_private: x25519.X25519PrivateKey,
+    #     identity_public: x25519.X25519PublicKey,
+    #     ephemeral_private: x25519.X25519PrivateKey,
+    #     ephemeral_public: x25519.X25519PublicKey,
+    #     recipient_identity_public: x25519.X25519PublicKey,
+    #     recipient_signed_prekey_public: x25519.X25519PublicKey,
+    #     recipient_ephemeral_public: x25519.X25519PublicKey
+    # ) -> bytes:
+    #     """Perform 3XDH key exchange."""
+    #     # First DH
+    #     shared1 = identity_private.exchange(recipient_ephemeral_public)
+    #     # Second DH
+    #     shared2 = ephemeral_private.exchange(recipient_identity_public)
+    #     # Third DH
+    #     shared3 = ephemeral_private.exchange(recipient_signed_prekey_public)
+
+    #     # Derive final key
+    #     shared_secret = shared1 + shared2 + shared3
+    #     derived_key = HKDF(
+    #         algorithm=hashes.SHA256(),
+    #         length=32,
+    #         salt=None,
+    #         info=b'3XDH key agreement'
+    #     ).derive(shared_secret)
+        
+    #     return derived_key
+
     @staticmethod
-    def perform_3xdh(
-        identity_private: x25519.X25519PrivateKey,
-        identity_public: x25519.X25519PublicKey,
-        ephemeral_private: x25519.X25519PrivateKey,
-        ephemeral_public: x25519.X25519PublicKey,
-        recipient_identity_public: x25519.X25519PublicKey,
-        recipient_signed_prekey_public: x25519.X25519PublicKey,
-        recipient_ephemeral_public: x25519.X25519PublicKey
+    def perform_3xdh_sender(
+        identity_private: x25519.X25519PrivateKey,       
+        ephemeral_private: x25519.X25519PrivateKey,      
+        recipient_identity_public: x25519.X25519PublicKey,  
+        recipient_signed_prekey_public: x25519.X25519PublicKey,  
+        recipient_one_time_prekey_public: x25519.X25519PublicKey = None,
     ) -> bytes:
-        """Perform 3XDH key exchange."""
-        # First DH
-        shared1 = identity_private.exchange(recipient_ephemeral_public)
-        # Second DH
-        shared2 = ephemeral_private.exchange(recipient_identity_public)
-        # Third DH
+        """Perform correct 3XDH key exchange as used in Signal."""
+        shared1 = ephemeral_private.exchange(recipient_identity_public)
+
+        shared2 = identity_private.exchange(recipient_signed_prekey_public)
+
         shared3 = ephemeral_private.exchange(recipient_signed_prekey_public)
 
-        # Derive final key
         shared_secret = shared1 + shared2 + shared3
+        if recipient_one_time_prekey_public:
+            shared4 = ephemeral_private.exchange(recipient_one_time_prekey_public)
+            shared_secret += shared4
+
         derived_key = HKDF(
             algorithm=hashes.SHA256(),
             length=32,
             salt=None,
             info=b'3XDH key agreement'
         ).derive(shared_secret)
-        
+
+        return derived_key
+    
+    @staticmethod
+    def perform_3xdh_recipient(
+        identity_private: x25519.X25519PrivateKey,          
+        signed_prekey_private: x25519.X25519PrivateKey,     
+        sender_identity_public: x25519.X25519PublicKey,     
+        sender_ephemeral_public: x25519.X25519PublicKey,    
+        one_time_prekey_private: x25519.X25519PrivateKey = None    
+        ) -> bytes:
+        """Perform 3XDH from the receiver's side."""
+        shared1 = identity_private.exchange(sender_ephemeral_public)
+
+        shared2 = signed_prekey_private.exchange(sender_identity_public)
+
+        shared3 = signed_prekey_private.exchange(sender_ephemeral_public)
+
+        shared_secret = shared1 + shared2 + shared3
+        if one_time_prekey_private:  
+            shared4 = one_time_prekey_private.exchange(sender_ephemeral_public)
+            shared_secret += shared4
+
+        derived_key = HKDF(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=None,
+            info=b'3XDH key agreement'
+        ).derive(shared_secret)
+
         return derived_key
 
     @staticmethod
@@ -95,9 +154,9 @@ class CryptoUtils:
         sender_ephemeral_pubkey: bytes,
         valid_until: int,
         identity_key: ed25519.Ed25519PrivateKey
-    ) -> Dict[str, Any]:
-        """Create a Privilege Attribute Certificate (PAC)."""
-        pac = {
+    ) -> PAC:
+        """Create a Privilege Attribute Certificate (PAC) and return as PAC object."""
+        pac_dict = {
             "file_id": file_id,
             "recipient_id": recipient_id,
             "issuer_id": issuer_id,
@@ -107,13 +166,20 @@ class CryptoUtils:
             "valid_until": valid_until,
             "revoked": False
         }
-        
         # Create signature
-        message = json.dumps(pac, sort_keys=True).encode()
+        message = json.dumps(pac_dict, sort_keys=True).encode()
         signature = identity_key.sign(message)
-        pac["signature"] = base64.b64encode(signature).decode()
-        
-        return pac
+        pac_dict["signature"] = base64.b64encode(signature).decode()
+        # Return as PAC object
+        return PAC(
+            recipient_id=recipient_id,
+            file_id=file_id,
+            valid_until=valid_until,
+            encrypted_file_key=pac_dict["encrypted_file_key"],
+            signature=pac_dict["signature"],
+            issuer_id=issuer_id,
+            sender_ephemeral_public=pac_dict["sender_ephemeral_pubkey"]
+        )
 
     @staticmethod
     def verify_pac(pac: Dict[str, Any], issuer_public_key: ed25519.Ed25519PublicKey) -> bool:
