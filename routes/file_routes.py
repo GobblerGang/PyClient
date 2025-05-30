@@ -59,11 +59,8 @@ def share_file(file_uuid):
         master_key = MasterKey().get()
         try:
             identity_private_key = current_user.get_identity_private_key(master_key)
-            error, user_to_share = share_file_with_user_service(file, username, current_user, identity_private_key)
-            if error:
-                flash(error)
-            else:
-                flash(f'File shared with {username}')
+            _ = share_file_with_user_service(file, username, current_user, identity_private_key)    
+            flash(f'File shared with {username}')
         except Exception as e:
             flash(f'Error sharing file: {str(e)}')
         return redirect(url_for('file.list_files'))

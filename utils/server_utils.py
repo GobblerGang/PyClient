@@ -29,10 +29,9 @@ def set_headers(private_key: Ed25519PrivateKey, user_id: int, payload: bytes):
         "X-Signature": signature,
     }
 
-def get_user_by_name(user_name: str):
+def get_user_by_name(username: str):
     """
-    NOTE: This function will be used to retrieve 
-    a user by their ID from the server.
+    NOTE: This function retrieves a user by their username from the server.
     EXPECTED JSON response structure:
     {
         "id": int,
@@ -43,9 +42,25 @@ def get_user_by_name(user_name: str):
         "signed_prekey_signature": str,
         "opks": dict (may not use these)
     }
-    If the user is not found, it returns None.
+    Returns a tuple: (data, error), where `data` is the user information if found,
+    and `error` is an error message if the user is not found or an exception occurs.
     """
-    return None
+    url = f"{SERVER_URL}:{SERVER_PORT}/api/users/{username}"
+    try:
+        response = requests.get(url)
+        if response.status_code != 200:
+            try:
+                error_msg = response.json().get('error', 'Unknown error')
+            except Exception:
+                error_msg = 'Unknown error'
+            return None, error_msg
+        data = response.json()
+        if 'error' in data:
+            return None, data['error']
+        return data, None
+    except Exception as e:
+        return None, str(e)
+    
 
 def upload_file(file_ciphertext: bytes, file_name: str, file_uuid: str, owner_id: str, **args):
     """

@@ -65,11 +65,23 @@ def get_user_ed25519_private_key(user, master_key):
 
 def share_file_with_user_service(file_info, username: str, user, master_key):
     """
-    file_info: a FileInfo or dict from the server (must contain file_uuid, filename, etc)
+    Share a file with another user.
+
+    Args:
+        file_info: A FileInfo or dict from the server (must contain file_uuid, filename, etc).
+        username: The username of the recipient.
+        user: The user object of the sender.
+        master_key: The master key for encryption.
+
+    Returns:
+        The user object of the recipient.
+
+    Raises:
+        ValueError: If the recipient user is not found, keys are missing, or decryption fails.
     """
-    user_to_share = server.get_user_by_name(username)
-    if not user_to_share:
-        raise ValueError("User not found")
+    user_to_share, error = server.get_user_by_name(username)
+    if error:
+        raise ValueError(f"User not found: {error}")
     
     k_file = CryptoUtils.decrypt_with_key(
         file_info.k_file_nonce,
@@ -116,7 +128,7 @@ def share_file_with_user_service(file_info, username: str, user, master_key):
         mime_type=file_info.mime_type
     )
     server.send_pac(pac.to_dict())
-    return None, user_to_share
+    return user_to_share
 
 def delete_file_(file):
     # NOTE: needs to be implemented

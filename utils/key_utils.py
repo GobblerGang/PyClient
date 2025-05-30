@@ -17,7 +17,8 @@ def get_user_vault(user):
         "identity_key_private_enc": user.identity_key_private_enc,
         "identity_key_private_nonce": user.identity_key_private_nonce,
         "signed_prekey_private_enc": user.signed_prekey_private_enc,
-        "signed_prekey_private_nonce": user.signed_prekey_private_nonce
+        "signed_prekey_private_nonce": user.signed_prekey_private_nonce,
+        "opks_json": user.opks_json if user.opks_json else "[]"
     }
 
 
@@ -65,7 +66,7 @@ def generate_user_vault(identity_private, identity_public, spk_private, spk_publ
         ),
         master_key,
         b'signed_prekey')
-    opks_list = []
+    opks_json_list = []
     for opk_private, opk_public in opks:
         opk_pub_b64 = b64e(opk_public.public_bytes(
             encoding=serialization.Encoding.Raw,
@@ -79,7 +80,7 @@ def generate_user_vault(identity_private, identity_public, spk_private, spk_publ
             ),
             master_key,
             b'opk')
-        opks_list.append({
+        opks_json_list.append({
             "public": opk_pub_b64,
             "private_enc": b64e(opk_enc),
             "private_nonce": b64e(opk_nonce)
@@ -99,13 +100,13 @@ def generate_user_vault(identity_private, identity_public, spk_private, spk_publ
         "identity_key_private_nonce": b64e(ik_nonce),
         "signed_prekey_private_enc": b64e(spk_enc),
         "signed_prekey_private_nonce": b64e(spk_nonce),
-        "opks": opks_list
+        "opks_json": opks_json_list
     }
 
 def decrypt_all_opks(opks_json, master_key):
-    opks = json.loads(opks_json)
+    opks_json_list = json.loads(opks_json)
     decrypted_opks = []
-    for opk in opks:
+    for opk in opks_json_list:
         opk_private_bytes = CryptoUtils.decrypt_with_key(
             base64.b64decode(opk["private_nonce"]),
             base64.b64decode(opk["private_enc"]),
