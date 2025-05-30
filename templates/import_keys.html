@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}Import Keys{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card mt-5">
+            <div class="card-header">
+                <h2 class="text-center">Import Your Key Bundle</h2>
+            </div>
+            <div class="card-body">
+                <form method="post" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="username" class="form-label">Username</label>
+                        <input class="form-control" type="text" id="username" name="username" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="password" class="form-label">Password</label>
+                        <input class="form-control" type="password" id="password" name="password" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="keyfile" class="form-label">Select your exported JSON key file:</label>
+                        <input class="form-control" type="file" id="keyfile" name="keyfile" accept="application/json" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Import Keys</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -15,11 +15,11 @@ def sign_payload(payload: bytes, nonce: str, private_key: Ed25519PrivateKey) -> 
     signature = private_key.sign(message)
     return base64.b64encode(signature).decode()
 
-def set_headers(private_key: Ed25519PrivateKey, user_id: int, payload: bytes):
+def set_headers(private_key: Ed25519PrivateKey, user_id: str, payload: bytes):
     """
     Set headers for server requests, including signature, nonce and user ID.
     """
-    nonce = get_server_nonce(str(user_id))
+    nonce = get_server_nonce(user_id)
     if not nonce:
         raise ValueError("Failed to retrieve nonce from server.")
     signature = sign_payload(payload, nonce, private_key)
@@ -29,10 +29,9 @@ def set_headers(private_key: Ed25519PrivateKey, user_id: int, payload: bytes):
         "X-Signature": signature,
     }
 
-def get_user_by_name(user_name: str):
+def get_user_by_name(username: str):
     """
-    NOTE: This function will be used to retrieve 
-    a user by their ID from the server.
+    NOTE: This function retrieves a user by their username from the server.
     EXPECTED JSON response structure:
     {
         "id": int,
@@ -43,9 +42,25 @@ def get_user_by_name(user_name: str):
         "signed_prekey_signature": str,
         "opks": dict (may not use these)
     }
-    If the user is not found, it returns None.
+    Returns a tuple: (data, error), where `data` is the user information if found,
+    and `error` is an error message if the user is not found or an exception occurs.
     """
-    return None
+    url = f"{SERVER_URL}:{SERVER_PORT}/api/users/{username}"
+    try:
+        response = requests.get(url)
+        if response.status_code != 200:
+            try:
+                error_msg = response.json().get('error', 'Unknown error')
+            except Exception:
+                error_msg = 'Unknown error'
+            return None, error_msg
+        data = response.json()
+        if 'error' in data:
+            return None, data['error']
+        return data, None
+    except Exception as e:
+        return None, str(e)
+    
 
 def upload_file(file_ciphertext: bytes, file_name: str, file_uuid: str, owner_id: str, **args):
     """
@@ -109,74 +124,6 @@ def send_pac(pac):
     print(f"PAC sent: {pac}")
     return True
 
-# def get_pacs(recipient_uuid: str):
-#     """
-#     Retrieve all PACs (shared files) for a given recipient from the server.
-#     Returns a list of PAC JSON objects, or an empty list if none found.
-#     Expected JSON response structure:
-#     [
-#         {
-#             "pac": {
-#                 "recipient_id": int,
-#                 "file_id": int,
-#                 "valid_until": str,
-#                 "encrypted_file_key": str,
-#                 "signature": str,
-#                 "issuer_id": int,
-#                 "sender_ephemeral_public": str,
-#                 "k_file_nonce": str,
-#                 "filename": str,
-#                 "mime_type": str
-#             },
-#         },
-#         ...
-#     ]
-#     """
-#     try:
-#         server_url = f"{SERVER_URL}:{SERVER_PORT}/api/pacs"
-#         params = {"recipient_uuid": recipient_uuid}
-#         response = requests.get(server_url, params=params)
-#         response.raise_for_status()
-#         return response.json()
-#     except Exception as e:
-#         print(f"Error retrieving PACs: {e}")
-#         return []
-
-# def get_shared_file_info(file_ids):
-#     """
-#     Retrieve file info (name, type, owner name) for a list of file IDs from the server.
-#     Returns a list of dicts with keys: file_id, name, type, owner_name.
-#     """
-#     try:
-#         server_url = f"{SERVER_URL}:{SERVER_PORT}/api/file_info"
-#         response = requests.post(server_url, json={"file_ids": file_ids})
-#         response.raise_for_status()
-#         return response.json()  # Expecting a list of file info dicts
-#     except Exception as e:
-#         print(f"Error retrieving file info: {e}")
-#         return []
-
-# def get_user_file_info(owner_uuid: str):
-#     """
-#     Retrieve file info for files owned by a specific user, and files shared with them.
-#     Returns a dict with two arrays:
-#       {
-#         'owned_files': [FileInfo JSON dicts...],
-#         'shared_files': [FileInfo JSON dicts...]
-#       }
-#     Each array contains dicts with keys: file_id, name, type, owner_id (or owner_name if needed).
-#     """
-#     try:
-#         server_url = f"{SERVER_URL}:{SERVER_PORT}/api/owned_files"
-#         params = {"owner_uuid": owner_uuid}
-#         response = requests.get(server_url, params=params)
-#         response.raise_for_status()
-#         # Expecting a dict: { 'owned_files': [...], 'shared_files': [...] }
-#         return response.json()
-#     except Exception as e:
-#         print(f"Error retrieving owned/shared file info: {e}")
-#         return {"owned_files": [], "shared_files": []}
-    
 def download_file(file_uuid: str):
     """
     Retrieve an encrypted file by its UUID from the server.
@@ -201,31 +148,32 @@ def download_file(file_uuid: str):
 def create_user(user_data):
     """
     Create a new user on the server.
-    Accepts a User object and returns True if successful, False otherwise.
-    Expected JSON body structure:
-    {
-        "username": str,
-        "email": str,
-        "identity_key_public": str,
-        "signed_prekey_public": str,
-        "signed_prekey_signature": str,
-        "salt": str,  # Base64 encoded salt
-        "opks": dict (may not use these)
-    }
-    Expected response:
-    {
-        "uuid": str,
-        "success": bool,
-        "error": str (if any)
-    }
+    Accepts a user_data dict and returns a dict with keys: success, uuid, error (if any).
     """
     try:
-        server_url = f"{SERVER_URL}:{SERVER_PORT}/api/users"
+        server_url = f"{SERVER_URL}:{SERVER_PORT}/api/register"
         response = requests.post(server_url, json=user_data)
-        response.raise_for_status()
-        return response.json()  # User created successfully
+        # Try to parse JSON even on error status
+        try:
+            resp_json = response.json()
+        except Exception:
+            resp_json = {}
+        if response.status_code == 201:
+            return {
+                "success": True,
+                "uuid": resp_json.get("user_uuid"),
+                "error": None
+            }
+        else:
+            # Return error message from server if present
+            return {
+                "success": False,
+                "uuid": None,
+                "error": resp_json.get("error", f"HTTP {response.status_code}")
+            }
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        print(f"Error creating user: {e}")
+        return {"success": False, "error": str(e), "uuid": None}
 
 def get_owned_files(user_id: str, private_key: Ed25519PrivateKey):
     """

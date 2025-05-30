@@ -1,13 +1,16 @@
+import base64
 from datetime import datetime
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import UserMixin
 from extensions.extensions import db
+from flask import g
+from utils.crypto_utils import CryptoUtils
 
 # Association table for file sharing
-file_shares = db.Table('file_shares',
-    db.Column('file_id', db.Integer, db.ForeignKey('file.id'), primary_key=True),
-    db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True)
-)
+# file_shares = db.Table('file_shares',
+#     db.Column('file_id', db.Integer, db.ForeignKey('file.id'), primary_key=True),
+#     db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True)
+# )
 
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -26,6 +29,19 @@ class User(UserMixin, db.Model):
     # Add OPKs as a JSON string field
     opks_json = db.Column(db.Text)  # Store list of base64 public keys as JSON
     # Relationships
+    
+    
+    def get_identity_private_key(self, master_key):
+        """
+        Decrypt and return the user's identity private key, caching it per-request using Flask's g.
+        """
+        if not hasattr(g, 'identity_private_key'):
+            nonce = base64.b64decode(self.identity_key_private_nonce)
+            enc = base64.b64decode(self.identity_key_private_enc)
+            decrypted_bytes = CryptoUtils.decrypt_with_key(nonce, enc, master_key, b'identity_key')
+            g.identity_private_key = decrypted_bytes
+        return g.identity_private_key
+
 #     files = db.relationship('File', backref='owner', lazy=True)
     
 # class File(db.Model):
