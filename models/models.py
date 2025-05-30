@@ -7,10 +7,10 @@ from flask import g
 from utils.crypto_utils import CryptoUtils
 
 # Association table for file sharing
-file_shares = db.Table('file_shares',
-    db.Column('file_id', db.Integer, db.ForeignKey('file.id'), primary_key=True),
-    db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True)
-)
+# file_shares = db.Table('file_shares',
+#     db.Column('file_id', db.Integer, db.ForeignKey('file.id'), primary_key=True),
+#     db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True)
+# )
 
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)

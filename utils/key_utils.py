@@ -18,7 +18,7 @@ def get_user_vault(user):
         "identity_key_private_nonce": user.identity_key_private_nonce,
         "signed_prekey_private_enc": user.signed_prekey_private_enc,
         "signed_prekey_private_nonce": user.signed_prekey_private_nonce,
-        "opks_json": user.opks_json if user.opks_json else "[]"
+        "opks": user.opks_json if user.opks_json else "[]"
     }
 
 
@@ -100,7 +100,7 @@ def generate_user_vault(identity_private, identity_public, spk_private, spk_publ
         "identity_key_private_nonce": b64e(ik_nonce),
         "signed_prekey_private_enc": b64e(spk_enc),
         "signed_prekey_private_nonce": b64e(spk_nonce),
-        "opks_json": opks_json_list
+        "opks": opks_json_list
     }
 
 def decrypt_all_opks(opks_json, master_key):

@@ -10,6 +10,7 @@ from utils.secure_master_key import MasterKey
 import utils.server_utils as server
 
 def create_user_service(username, email, vault):
+    #TODO we are sending opks with public and private keys, this is an issue that needs fixed (tbh get rid of opks)
     user_data = {
         "username": username,
         "email": email,
@@ -17,10 +18,6 @@ def create_user_service(username, email, vault):
         "signed_prekey_public": vault["signed_prekey_public"],
         "signed_prekey_signature": vault["signed_prekey_signature"],
         "salt": vault["salt"],
-        "identity_key_private_enc": vault["identity_key_private_enc"],
-        "identity_key_private_nonce": vault["identity_key_private_nonce"],
-        "signed_prekey_private_enc": vault["signed_prekey_private_enc"],
-        "signed_prekey_private_nonce": vault["signed_prekey_private_nonce"],
         "opks_json": json.dumps(vault["opks"])
     }
     response = server.create_user(user_data)

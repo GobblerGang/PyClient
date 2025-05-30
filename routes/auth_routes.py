@@ -87,12 +87,10 @@ def login():
         password = request.form.get('password')
         user = User.query.filter_by(username=username).first()
         if not user:
-            #TODO: Check server for user existence
             user, _ = server.get_user_by_name(username)
             if user:
                 flash('User found on server, but not in local database. Please import your key bundle.')
-                # TODO: Implement import logic
-                return redirect(url_for('auth.import_keys'))
+                return redirect(url_for('auth.import_user_keys'))
             flash('User not found')
             return render_template('login.html')
         vault = get_user_vault(user)
@@ -191,7 +189,7 @@ def export_user_keys():
         "identity_key_private_nonce": vault["identity_key_private_nonce"],
         "signed_prekey_private_enc": vault["signed_prekey_private_enc"],
         "signed_prekey_private_nonce": vault["signed_prekey_private_nonce"],
-        "opks": json.loads(vault["opks_json"])
+        "opks": json.loads(vault["opks"])
     }
     
     filename = f"{current_user.username}_keys.json"
