@@ -36,9 +36,10 @@ def upload_file():
 def list_files():
     try:
         master_key = MasterKey().get()
-        owned_files, received_pacs, issued_pacs=refresh_all_files_service(current_user, current_user.get_identity_private_key(master_key))
+        owned_files, received_pacs, issued_pacs = refresh_all_files_service(current_user, current_user.get_identity_private_key(master_key))
     except Exception as e:
         flash(f'Error refreshing file info: {str(e)}')
+        owned_files, received_pacs = [], []  # Default to empty lists
     return render_template('files.html', owned_files=owned_files, shared_files=received_pacs)
 
 @bp_file.route('/share/<file_uuid>', methods=['GET', 'POST'])
