@@ -12,15 +12,23 @@ from utils.dataclasses import Vault
 
 def create_user_service(username, email, vault: Vault, user_uuid, kek_dict: dict):
     user_data = {
-        "username": username,
-        "email": email,
-        "identity_key_public": vault.identity_key_public,
-        "signed_prekey_public": vault.signed_prekey_public,
-        "signed_prekey_signature": vault.signed_prekey_signature,
-        "salt": vault.salt,
-        "opks_json": json.dumps(vault.opks),
-        "uuid": user_uuid,
-        "kek_dict": json.dumps(kek_dict)
+        "user": {
+            "uuid": user_uuid,
+            "username": username,
+            "email": email,
+            "salt": vault.salt
+        },
+        "keys": {
+            "identity_key_public": vault.identity_key_public,
+            "signed_prekey_public": vault.signed_prekey_public,
+            "signed_prekey_signature": vault.signed_prekey_signature,
+            "opks": vault.opks  
+        },
+        "kek": {
+            "enc_kek_cyphertext": kek_dict['enc_kek'],
+            "nonce": kek_dict['kek_nonce'],
+            "updated_at": json.loads(base64.b64decode(kek_dict['aad']).decode())['timestamp']
+        }
     }
     response = server.create_user(user_data)
     if not response or not isinstance(response, dict):
