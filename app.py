@@ -1,6 +1,7 @@
 from flask import Flask
 import os
 from extensions.extensions import db, login_manager
+from flask_wtf.csrf import CSRFProtect
 # from models.models import User, File
 # from routes.auth_routes import bp_auth
 # from routes.dashboard_routes import bp_dashboard
@@ -12,6 +13,9 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+# Initialize CSRF protection
+csrf = CSRFProtect(app)
 
 db.init_app(app)
 login_manager.init_app(app)
