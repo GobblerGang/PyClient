@@ -25,5 +25,5 @@ requests==2.32.3
 SQLAlchemy==2.0.41
 typing_extensions==4.13.2
 urllib3==2.4.0
-Werkzeug==2.3.7
+Werkzeug==3.0.6
 WTForms==3.2.1
