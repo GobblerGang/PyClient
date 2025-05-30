@@ -3,28 +3,23 @@
 {% block title %}Share File{% endblock %}
 
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header">
-                <h2 class="text-center">Share File</h2>
+<div class="row">
+    <div class="col-md-6 offset-md-3">
+        <h2>Share File: {{ file.original_filename }}</h2>
+        <form method="POST">
+            <div class="mb-3">
+                <label for="username" class="form-label">Username to share with</label>
+                <input type="text" class="form-control" id="username" name="username" required>
+                <div class="form-text">Enter the username of the person you want to share this file with.</div>
             </div>
-            <div class="card-body">
-                <p class="lead">Sharing: {{ file.original_filename }}</p>
-                <form method="POST">
-                    <div class="mb-3">
-                        <label for="username" class="form-label">Username to share with</label>
-                        <input type="text" class="form-control" id="username" name="username" required>
-                    </div>
-                    <div class="d-grid">
-                        <button type="submit" class="btn btn-primary">Share</button>
-                    </div>
-                </form>
-                <div class="text-center mt-3">
-                    <a href="{{ url_for('list_files') }}" class="btn btn-secondary">Back to Files</a>
-                </div>
+            <div class="mb-3">
+                <label for="valid_until" class="form-label">Access Valid Until (optional)</label>
+                <input type="datetime-local" class="form-control" id="valid_until" name="valid_until">
+                <div class="form-text">Leave empty for indefinite access.</div>
             </div>
-        </div>
+            <button type="submit" class="btn btn-primary">Share File</button>
+            <a href="{{ url_for('file.list_files') }}" class="btn btn-secondary">Cancel</a>
+        </form>
     </div>
 </div>
-{% endblock %} 
+{% endblock %}

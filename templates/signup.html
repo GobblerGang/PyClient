@@ -10,7 +10,7 @@
                 <h2 class="text-center">Sign Up</h2>
             </div>
             <div class="card-body">
-                <form method="POST">
+                <form method="POST" action="{{ url_for('auth.signup') }}">
                     <div class="mb-3">
                         <label for="username" class="form-label">Username</label>
                         <input type="text" class="form-control" id="username" name="username" required>
@@ -28,10 +28,10 @@
                     </div>
                 </form>
                 <div class="text-center mt-3">
-                    <p>Already have an account? <a href="{{ url_for('login') }}">Login here</a></p>
+                    <p>Already have an account? <a href="{{ url_for('auth.login') }}">Login here</a></p>
                 </div>
             </div>
         </div>
     </div>
 </div>
-{% endblock %} 
+{% endblock %}
