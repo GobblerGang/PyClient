@@ -11,6 +11,7 @@
             </div>
             <div class="card-body">
                 <form method="post" enctype="multipart/form-data">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="mb-3">
                         <label for="username" class="form-label">Username</label>
                         <input class="form-control" type="text" id="username" name="username" required>

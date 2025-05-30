@@ -7,6 +7,7 @@
     <div class="col-md-6 offset-md-3">
         <h2>Share File: {{ file.original_filename }}</h2>
         <form method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="mb-3">
                 <label for="username" class="form-label">Username to share with</label>
                 <input type="text" class="form-control" id="username" name="username" required>
