@@ -29,6 +29,57 @@ def set_headers(private_key: Ed25519PrivateKey, user_id: str, payload: bytes):
         "X-Signature": signature,
     }
 
+def create_user(user_data):
+    """
+    Create a new user on the server.
+    Accepts a user_data dict and returns a dict with keys: success, uuid, error (if any).
+    """
+    try:
+        server_url = f"{SERVER_URL}:{SERVER_PORT}/api/register"
+        response = requests.post(server_url, json=user_data)
+        # Try to parse JSON even on error status
+        try:
+            resp_json = response.json()
+        except Exception:
+            resp_json = {}
+        if response.status_code == 201:
+            return {
+                "success": True,
+                "uuid": resp_json.get("user_uuid"),
+                "error": None
+            }
+        else:
+            # Return error message from server if present
+            return {
+                "success": False,
+                "uuid": None,
+                "error": resp_json.get("error", f"HTTP {response.status_code}")
+            }
+    except Exception as e:
+        print(f"Error creating user: {e}")
+        return {"success": False, "error": str(e), "uuid": None}
+
+def get_new_user_uuid():
+    """
+    Get a new UUID for a user from the server.
+    Returns a string UUID or None if an error occurs.
+    """
+    url = f"{SERVER_URL}:{SERVER_PORT}/api/generate-uuid"
+    try:
+        response = requests.get(url)
+        if response.status_code != 200:
+            try:
+                error_msg = response.json().get('error', 'Unknown error')
+            except Exception:
+                error_msg = 'Unknown error'
+            return None, error_msg
+        data = response.json.get('uuid')
+        if 'error' in data:
+            return None, data['error']
+        return data, None
+    except Exception as e:
+        return None, str(e)
+
 def get_user_by_name(username: str):
     """
     NOTE: This function retrieves a user by their username from the server.
@@ -145,36 +196,6 @@ def download_file(file_uuid: str):
         print(f"Error retrieving file {file_uuid}: {e}")
         return None
     
-def create_user(user_data):
-    """
-    Create a new user on the server.
-    Accepts a user_data dict and returns a dict with keys: success, uuid, error (if any).
-    """
-    try:
-        server_url = f"{SERVER_URL}:{SERVER_PORT}/api/register"
-        response = requests.post(server_url, json=user_data)
-        # Try to parse JSON even on error status
-        try:
-            resp_json = response.json()
-        except Exception:
-            resp_json = {}
-        if response.status_code == 201:
-            return {
-                "success": True,
-                "uuid": resp_json.get("user_uuid"),
-                "error": None
-            }
-        else:
-            # Return error message from server if present
-            return {
-                "success": False,
-                "uuid": None,
-                "error": resp_json.get("error", f"HTTP {response.status_code}")
-            }
-    except Exception as e:
-        print(f"Error creating user: {e}")
-        return {"success": False, "error": str(e), "uuid": None}
-
 def get_owned_files(user_id: str, private_key: Ed25519PrivateKey):
     """
     Retrieve all files owned by the user using the X-User-ID header.

@@ -1,3 +1,45 @@
+from dataclasses import dataclass, field
+from typing import List, Any, Dict, Optional
+
+@dataclass
+class Vault:
+    salt: str
+    identity_key_public: str
+    signed_prekey_public: str
+    signed_prekey_signature: str
+    identity_key_private_enc: str
+    identity_key_private_nonce: str
+    signed_prekey_private_enc: str
+    signed_prekey_private_nonce: str
+    opks: Any = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, data: Dict) -> 'Vault':
+        return cls(
+            salt=data["salt"],
+            identity_key_public=data["identity_key_public"],
+            signed_prekey_public=data["signed_prekey_public"],
+            signed_prekey_signature=data["signed_prekey_signature"],
+            identity_key_private_enc=data["identity_key_private_enc"],
+            identity_key_private_nonce=data["identity_key_private_nonce"],
+            signed_prekey_private_enc=data["signed_prekey_private_enc"],
+            signed_prekey_private_nonce=data["signed_prekey_private_nonce"],
+            opks=data.get("opks", [])
+        )
+
+    def to_dict(self) -> Dict:
+        return {
+            "salt": self.salt,
+            "identity_key_public": self.identity_key_public,
+            "signed_prekey_public": self.signed_prekey_public,
+            "signed_prekey_signature": self.signed_prekey_signature,
+            "identity_key_private_enc": self.identity_key_private_enc,
+            "identity_key_private_nonce": self.identity_key_private_nonce,
+            "signed_prekey_private_enc": self.signed_prekey_private_enc,
+            "signed_prekey_private_nonce": self.signed_prekey_private_nonce,
+            "opks": self.opks
+        }
+
 class PAC:
     def __init__(self, recipient_id, file_uuid, valid_until, encrypted_file_key, signature, issuer_id, sender_ephemeral_public, k_file_nonce, filename=None, mime_type=None):
         self.recipient_id = recipient_id

@@ -17,6 +17,8 @@ from utils.secure_master_key import MasterKey
 from session_manager import clear_session
 import utils.server_utils as server
 from services.auth_service import create_user_service, import_user_keys_service
+from utils.dataclasses import Vault
+from services.kek_service import encrypt_kek
 
 bp_auth = Blueprint('auth', __name__)
 
@@ -33,12 +35,11 @@ def username_exists(username):
 def email_exists(email):
     return User.query.filter_by(email=email).first() is not None
 
-def create_user(username, email, vault):
-    user, error = create_user_service(username, email, vault)
+def create_user(username, email, vault: Vault, user_uuid, kek: dict):
+    user, error = create_user_service(username, email, vault, user_uuid, kek)
     if error:
-        flash(error)
-        return None
-    return user
+        None, error
+    return user, error
 
 # --- Routes ---
 @bp_auth.route('/signup', methods=['GET', 'POST'])
@@ -57,21 +58,39 @@ def signup():
         
         # Take password input
         password = request.form.get('password')
-        # generate a salt
-        salt = os.urandom(16)
-        master_key = MasterKey().derive_key(password, salt)
+        if not password:
+            flash('Password is required')
+            return redirect(url_for('auth.signup'))
+        
+        salt, master_key = MasterKey().derive_key(password)
         MasterKey().set_key(master_key)
+        
+        # Generate KEK
+        kek = os.urandom(32)
+        
         # generate identity keypair, signed prekey pair
         identity_private, identity_public = CryptoUtils.generate_identity_keypair()
         spk_private, spk_public, spk_signature = CryptoUtils.generate_signed_prekey(identity_private)
         # generate 100 OPKs
         opks = [CryptoUtils.generate_identity_keypair() for _ in range(100)]
         
-        vault = generate_user_vault(identity_private, identity_public, spk_private, spk_public, spk_signature, salt, master_key, opks)
+        # Encrypt identity and signed prekey private keys with KEK
+        vault = generate_user_vault(identity_private, identity_public, spk_private, spk_public, spk_signature, salt, kek, opks)
+        
+        user_uuid, error = server.get_new_user_uuid()
+        if error:
+            flash(f'Error communicating with the server. Please try again later')
+            return redirect(url_for('auth.signup'))
+        
+        
+        # Encrypt KEK with the master key, timestamp and user UUID as AAD
+        kek_dict = encrypt_kek(user_uuid, kek, master_key)
         
         # Sends user info to server and stores user in local database
-        if not create_user(username, email, vault):
-            flash('Failed to create user. Server may be down or busy.')
+        user, error = create_user(username, email, vault, kek_dict)
+        if not user:
+            print(f'Error creating user: {error}')
+            flash(f'Failed to create user: {error}')
             MasterKey().clear()
             return redirect(url_for('auth.signup'))
         
@@ -95,14 +114,10 @@ def login():
             return render_template('login.html')
         vault = get_user_vault(user)
         try:
-            salt = base64.b64decode(vault["salt"])
+            salt = base64.b64decode(vault.salt)
             master_key = MasterKey().derive_key(password, salt)
             MasterKey().set_key(master_key)
-            # print("Master key derived and set successfully")
-            
             identity_private_bytes, spk_private_bytes = try_decrypt_private_keys(vault, master_key)
-            # print("Private keys decrypted successfully")
-            
             if not verify_decrypted_keys(identity_private_bytes, spk_private_bytes, vault):
                 flash('Key mismatch! Vault or server data corrupted.')
                 MasterKey().clear()
@@ -133,7 +148,7 @@ def change_password():
         user = User.query.get(current_user.id)
         vault = get_user_vault(user)
         try:
-            old_salt = base64.b64decode(vault["salt"])
+            old_salt = base64.b64decode(vault.salt)
             old_master_key = MasterKey().derive_key(old_password, old_salt)
             MasterKey().set_key(old_master_key)
             identity_private_bytes, spk_private_bytes = try_decrypt_private_keys(vault, old_master_key)
@@ -161,12 +176,12 @@ def change_password():
             new_master_key,
             opk_keypairs
         )
-        user.salt = new_vault["salt"]
-        user.identity_key_private_enc = new_vault["identity_key_private_enc"]
-        user.identity_key_private_nonce = new_vault["identity_key_private_nonce"]
-        user.signed_prekey_private_enc = new_vault["signed_prekey_private_enc"]
-        user.signed_prekey_private_nonce = new_vault["signed_prekey_private_nonce"]
-        user.opks_json = json.dumps(new_vault["opks"])
+        user.salt = new_vault.salt
+        user.identity_key_private_enc = new_vault.identity_key_private_enc
+        user.identity_key_private_nonce = new_vault.identity_key_private_nonce
+        user.signed_prekey_private_enc = new_vault.signed_prekey_private_enc
+        user.signed_prekey_private_nonce = new_vault.signed_prekey_private_nonce
+        user.opks_json = json.dumps(new_vault.opks)
         db.session.commit()
         flash('Password changed successfully!')
         MasterKey().clear()
@@ -182,14 +197,14 @@ def export_user_keys():
     
     vault = get_user_vault(current_user)
     keys = {
-        "identity_key_public": vault["identity_key_public"],
-        "signed_prekey_public": vault["signed_prekey_public"],
-        "signed_prekey_signature": vault["signed_prekey_signature"],
-        "identity_key_private_enc": vault["identity_key_private_enc"],
-        "identity_key_private_nonce": vault["identity_key_private_nonce"],
-        "signed_prekey_private_enc": vault["signed_prekey_private_enc"],
-        "signed_prekey_private_nonce": vault["signed_prekey_private_nonce"],
-        "opks": json.loads(vault["opks"])
+        "identity_key_public": vault.identity_key_public,
+        "signed_prekey_public": vault.signed_prekey_public,
+        "signed_prekey_signature": vault.signed_prekey_signature,
+        "identity_key_private_enc": vault.identity_key_private_enc,
+        "identity_key_private_nonce": vault.identity_key_private_nonce,
+        "signed_prekey_private_enc": vault.signed_prekey_private_enc,
+        "signed_prekey_private_nonce": vault.signed_prekey_private_nonce,
+        "opks": vault.opks
     }
     
     filename = f"{current_user.username}_keys.json"

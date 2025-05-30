@@ -42,16 +42,14 @@ class User(UserMixin, db.Model):
             g.identity_private_key = decrypted_bytes
         return g.identity_private_key
 
-#     files = db.relationship('File', backref='owner', lazy=True)
-    
-# class File(db.Model):
-#     id = db.Column(db.Integer, primary_key=True)
-#     uuid = db.Column(db.String(36), unique=True, nullable=False)  # UUID for file identification
-#     filename = db.Column(db.String(255), nullable=False)
-#     upload_date = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-#     mime_type = db.Column(db.String(127), nullable=True)
-#     file_nonce = db.Column(db.String(44))  # Nonce for file encryption
-#     k_file_encrypted = db.Column(db.String(255))  # Encrypted file key
-#     k_file_nonce = db.Column(db.String(44))  # Nonce for file key encryption
-    
-#     owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+class KEK(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    enc_kek = db.Column(db.String(255), nullable=False)
+    kek_nonce = db.Column(db.String(44), nullable=False)
+    updated_at = db.Column(db.DateTime, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+
+    user = db.relationship('User', backref=db.backref('keks', lazy=True))
+
+    def __repr__(self):
+        return f'<KEK {self.id} for User {self.user_id}>'
