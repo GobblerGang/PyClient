@@ -86,7 +86,7 @@
                         <td>{{ file.upload_date.strftime('%Y-%m-%d %H:%M:%S') }}</td>
                         <td>{{ file.mime_type }}</td>
                         <td>
-                            <a href="{{ url_for('file.download_file', file_id=file.file_id) }}" class="btn btn-sm btn-success">Download</a>
+                            <a href="{{ url_for('file.download_file', file_uuid=file.file_uuid) }}" class="btn btn-sm btn-success">Download</a>
                         </td>
                     </tr>
                     {% endfor %}
