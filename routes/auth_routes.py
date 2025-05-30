@@ -6,7 +6,7 @@ from flask import Blueprint, render_template, request, redirect, send_file, url_
 from flask_login import login_user, logout_user, current_user
 
 from cryptography.hazmat.primitives.asymmetric import ed25519, x25519
-from models.models import User
+from models.models import User, KEK
 from extensions.extensions import login_manager, db
 from utils.crypto_utils import CryptoUtils
 from utils.key_utils import (
@@ -16,9 +16,10 @@ from utils.key_utils import (
 from utils.secure_master_key import MasterKey
 from session_manager import clear_session
 import utils.server_utils as server
-from services.auth_service import create_user_service, import_user_keys_service
+from services.auth_service import create_user_service, import_user_keys_service, login_user_service
 from utils.dataclasses import Vault
 from services.kek_service import encrypt_kek
+from cryptography.exceptions import InvalidTag
 
 bp_auth = Blueprint('auth', __name__)
 
@@ -104,27 +105,9 @@ def login():
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
-        user = User.query.filter_by(username=username).first()
-        if not user:
-            user, _ = server.get_user_by_name(username)
-            if user:
-                flash('User found on server, but not in local database. Please import your key bundle.')
-                return redirect(url_for('auth.import_user_keys'))
-            flash('User not found')
-            return render_template('login.html')
-        vault = get_user_vault(user)
-        try:
-            salt = base64.b64decode(vault.salt)
-            master_key = MasterKey().derive_key(password, salt)
-            MasterKey().set_key(master_key)
-            identity_private_bytes, spk_private_bytes = try_decrypt_private_keys(vault, master_key)
-            if not verify_decrypted_keys(identity_private_bytes, spk_private_bytes, vault):
-                flash('Key mismatch! Vault or server data corrupted.')
-                MasterKey().clear()
-                return render_template('login.html')
-        except Exception:
-            flash('Failed to decrypt keys. Wrong password?')
-            MasterKey().clear()
+        user, error = login_user_service(username, password)
+        if error:
+            flash(error)
             return render_template('login.html')
         flash('Login successful!')
         login_user(user)
@@ -218,19 +201,19 @@ def export_user_keys():
 
 @bp_auth.route('/import_keys', methods=['GET', 'POST'])
 def import_user_keys():
-    if request.method == 'GET':
-        return render_template('import_keys.html')
     # POST: handle import
-    username = request.form.get('username')
-    password = request.form.get('password')
-    keyfile = request.files.get('keyfile')
-    if not username or not password or not keyfile:
-        flash('All fields are required.')
-        return redirect(url_for('auth.import_user_keys'))
-    user, error = import_user_keys_service(username, password, keyfile)
-    if error:
-        flash(error)
-        return redirect(url_for('auth.import_user_keys'))
-    flash('Keys imported and user added. You can now log in.')
-    return redirect(url_for('auth.login'))
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        keyfile = request.files.get('keyfile')
+        if not username or not password or not keyfile:
+            flash('All fields are required.')
+            return redirect(url_for('auth.import_user_keys'))
+        user, error = import_user_keys_service(username, password, keyfile)
+        if error:
+            flash(error)
+            return redirect(url_for('auth.import_user_keys'))
+        flash('Keys imported and user added. You can now log in.')
+        return redirect(url_for('auth.login'))
+    return render_template('import_keys.html')
 
