@@ -14,6 +14,7 @@ from utils.key_utils import (
     get_user_vault
 )
 from utils.secure_master_key import MasterKey
+from utils.password_utils import validate_password_strength
 from session_manager import clear_session
 import utils.server_utils as server
 from services.auth_service import create_user_service, import_user_keys_service
@@ -55,8 +56,13 @@ def signup():
             flash('Email already registered')
             return redirect(url_for('auth.signup'))
         
-        # Take password input
+        # Take password input and validate
         password = request.form.get('password')
+        is_valid, message = validate_password_strength(password)
+        if not is_valid:
+            flash(message)
+            return redirect(url_for('auth.signup'))
+        
         # generate a salt
         salt = os.urandom(16)
         master_key = MasterKey().derive_key(password, salt)
@@ -130,6 +136,13 @@ def change_password():
     if request.method == 'POST':
         old_password = request.form.get('old_password')
         new_password = request.form.get('new_password')
+        
+        # Validate new password strength
+        is_valid, message = validate_password_strength(new_password)
+        if not is_valid:
+            flash(message)
+            return redirect(url_for('auth.change_password'))
+        
         user = User.query.get(current_user.id)
         vault = get_user_vault(user)
         try:
