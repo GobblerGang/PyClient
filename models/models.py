@@ -30,15 +30,16 @@ class User(UserMixin, db.Model):
     opks_json = db.Column(db.Text)  # Store list of base64 public keys as JSON
     # Relationships
     
+    kek = db.relationship('KEK', uselist=False, back_populates='user')
     
-    def get_identity_private_key(self, master_key):
+    def get_identity_private_key(self, kek):
         """
         Decrypt and return the user's identity private key, caching it per-request using Flask's g.
         """
         if not hasattr(g, 'identity_private_key'):
             nonce = base64.b64decode(self.identity_key_private_nonce)
             enc = base64.b64decode(self.identity_key_private_enc)
-            decrypted_bytes = CryptoUtils.decrypt_with_key(nonce, enc, master_key, b'identity_key')
+            decrypted_bytes = CryptoUtils.decrypt_with_key(nonce, enc, kek, b'identity_key')
             g.identity_private_key = decrypted_bytes
         return g.identity_private_key
 
@@ -46,10 +47,10 @@ class KEK(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     enc_kek = db.Column(db.String(255), nullable=False)
     kek_nonce = db.Column(db.String(44), nullable=False)
-    updated_at = db.Column(db.DateTime, nullable=False)
+    updated_at = db.Column(db.String(255), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
-    user = db.relationship('User', backref=db.backref('keks', lazy=True))
-
+    user = db.relationship('User', back_populates='kek')
+    
     def __repr__(self):
         return f'<KEK {self.id} for User {self.user_id}>'

@@ -4,15 +4,22 @@ from flask import flash
 from models.models import User, KEK
 from extensions.extensions import db
 from utils.key_utils import (
-    try_decrypt_private_keys, verify_decrypted_keys, get_user_vault
+    try_decrypt_private_keys, verify_decrypted_keys, get_user_vault, decrypt_all_opks, keypairs_from_opk_bytes, generate_user_vault
 )
 from utils.secure_master_key import MasterKey
 import utils.server_utils as server
 from utils.dataclasses import Vault
 from utils.crypto_utils import CryptoUtils
 from cryptography.exceptions import InvalidTag
+import datetime
+from services.kek_service import format_aad, encrypt_kek
+from cryptography.hazmat.primitives.asymmetric import ed25519, x25519
+import os
 
 def create_user_service(username, email, vault: Vault, user_uuid, kek_dict: dict):
+    kek_timestamp = json.loads(base64.b64decode(kek_dict['aad']).decode())['timestamp']
+    # print(f"Enc kek b64 encoded: {kek_dict['enc_kek']}")
+    # print(f"kek nonce b64 encoded: {kek_dict['kek_nonce']}")
     user_data = {
         "user": {
             "uuid": user_uuid,
@@ -29,13 +36,14 @@ def create_user_service(username, email, vault: Vault, user_uuid, kek_dict: dict
         "kek": {
             "enc_kek_cyphertext": kek_dict['enc_kek'],
             "nonce": kek_dict['kek_nonce'],
-            "updated_at": json.loads(base64.b64decode(kek_dict['aad']).decode())['timestamp']
+            "updated_at": kek_timestamp
         }
     }
     response = server.create_user(user_data)
     if not response or not isinstance(response, dict):
         return None, 'No response from server. Please try again later.'
     if not response.get("success"):
+        print("errored on server response:", response)
         error_msg = response.get("error", "Unknown error")
         return None, error_msg
     user = User(
@@ -53,17 +61,21 @@ def create_user_service(username, email, vault: Vault, user_uuid, kek_dict: dict
         uuid=user_uuid
     )
     db.session.add(user)
-    
+    db.session.commit()
+    print(f"User {username} created with UUID {user_uuid}")
     # Unwrap AAD from KEK into timestamp and uuid
-    aad_dict = json.loads(base64.b64decode(kek_dict['aad']).decode())
-    timestamp = aad_dict['timestamp']
+    # aad_dict = json.loads(base64.b64decode(kek_dict['aad']).decode())
+    
+    # print(f"KEK AAD timestamp: {timestamp.isoformat()}")
+    # print(f"kek info timestamp: {kek_timestamp}")
     
     kek = KEK(
         enc_kek=kek_dict['enc_kek'],
         kek_nonce=kek_dict['kek_nonce'],
         user_id=user.id,
-        updated_at=timestamp
+        updated_at=kek_timestamp
     )
+    # print(f"KEK for user {username} created with updated_at {kek_timestamp.isoformat()}")
     db.session.add(kek)
     db.session.commit()
     return user, None
@@ -128,41 +140,139 @@ def login_user_service(username: str, password: str):
         return None, 'Password is required'
     vault = get_user_vault(user)
     salt = base64.b64decode(vault.salt)
-    master_key = MasterKey().derive_key(password, salt)
-    MasterKey().set_key(master_key)
+    master_key = derive_master_key(password, salt)
     kek_info, error = server.get_kek_info(user.uuid)
+    server_updated_at = kek_info.get('updated_at') if kek_info else None
     if error or not kek_info:
         MasterKey().clear()
         return None, 'Failed to communicate with the server.'
-    try:
-        kek, aad = try_decrypt_kek(kek_info, master_key)
-    except InvalidTag:
-        local_kek = KEK.query.filter_by(user_id=user.id).order_by(KEK.updated_at.desc()).first()
-        try:
-            aad_json = json.loads(aad.decode())
-            server_updated_at = aad_json.get("timestamp")
-        except Exception:
-            server_updated_at = None
-        if local_kek:
-            local_updated_at = local_kek.updated_at.isoformat() if hasattr(local_kek.updated_at, 'isoformat') else str(local_kek.updated_at)
-            if server_updated_at and local_updated_at != server_updated_at:
-                MasterKey().clear()
-                return None, f"Your password was changed on another device. Please use the new password. Server updated at: {server_updated_at}"
-            else:
-                MasterKey().clear()
-                return None, 'Failed to log in. Wrong password or tampered data?'
-        else:
-            MasterKey().clear()
-            return None, 'Failed to log in. Wrong password or tampered data?'
+    # Check KEK freshness before proceeding
+    is_fresh, freshness_error = check_kek_freshness(user)
+    if not is_fresh:
+        MasterKey().clear()
+        return None, freshness_error
+    kek, kek_error = decrypt_kek_with_error_handling(kek_info, user.uuid, password, salt)
+    if kek_error:
+        MasterKey().clear()
+        return None, 'Failed to log in. Wrong password or tampered KEK data.'
     return user, None
 
-def try_decrypt_kek(kek_info, master_key):
+def try_decrypt_kek(kek_info, user_uuid, master_key):
     """
     Attempts to decrypt the KEK using the provided master key.
     Returns the decrypted KEK or raises an exception if decryption fails.
     """
-    enc_kek = base64.b64decode(kek_info['enc_kek'])
-    kek_nonce = base64.b64decode(kek_info['kek_nonce'])
-    aad = base64.b64decode(kek_info['aad'])
-    return CryptoUtils.decrypt_with_key(kek_nonce, enc_kek, master_key, aad), aad
+    enc_kek = base64.b64decode(kek_info['enc_kek_cyphertext'])
+    kek_nonce = base64.b64decode(kek_info['nonce'])
+    updated_at = kek_info.get('updated_at')
+    # user_uuid = kek_info.get('user_uuid')
+    aad = format_aad(user_uuid=user_uuid, timestamp=updated_at)
+    print(aad)
+    kek =CryptoUtils.decrypt_with_key(nonce=kek_nonce, ciphertext=enc_kek, key=master_key, associated_data=aad)
+    return kek, aad
+
+def change_password_service(user, old_password, new_password):
+    """
+    Handles the business logic for changing a user's password, including KEK-based authentication
+    and KEK re-encryption. Returns (success, error_message).
+    The vault is encrypted with the KEK and does not need to be re-encrypted or changed.
+    """
+    vault = get_user_vault(user)
+    salt = base64.b64decode(vault.salt)
+    # kek_info = {
+    #     "enc_kek": user.kek.enc_kek,
+    #     "kek_nonce": user.kek.kek_nonce,
+    #     "aad": format_aad(user_uuid=user.uuid, timestamp=user.kek.updated_at),
+    #     "updated_at": user.kek.updated_at,
+    # }
+    kek_info, _ = server.get_kek_info(user.uuid)
+    # Decrypt KEK with old password (via master key)
+    kek, kek_error = decrypt_kek_with_error_handling(kek_info, user.uuid, old_password, salt)
+    if kek_error:
+        print(f"Error decrypting KEK: {kek_error}")
+        return False, kek_error
+    # Check KEK freshness before proceeding
+    is_fresh, freshness_error = check_kek_freshness(user)
+    if not is_fresh:
+        return False, freshness_error
+    # Derive new master key and re-encrypt KEK
+    new_salt = os.urandom(16)
+    new_master_key = derive_master_key(new_password, new_salt)
+    kek_dict = encrypt_kek(
+        kek,
+        new_master_key,
+        user_uuid=user.uuid
+    )
+    # Update only KEK and salt fields; vault remains unchanged
+    new_timestamp = json.loads(base64.b64decode(kek_dict['aad']).decode())['timestamp']
+    user.salt = base64.b64encode(new_salt).decode()
+    user.enc_kek = kek_dict['enc_kek']
+    user.kek_nonce = kek_dict['kek_nonce']
+    user.kek_aad = kek_dict['aad']
+    user.kek_updated_at = new_timestamp
     
+    # Decrypt IK priv for header signing
+    ik_priv_bytes = User.get_identity_private_key(self=user, kek=kek)
+    ik_priv = ed25519.Ed25519PrivateKey.from_private_bytes(ik_priv_bytes)
+    
+    new_kek_info, error = server.update_kek_info(kek_nonce=kek_dict['kek_nonce'], 
+                           encrypted_kek=kek_dict['enc_kek'], 
+                           updated_at=new_timestamp, 
+                           user_uuid=user.uuid,
+                           ik_priv=ik_priv)
+    if error:
+        print(f"Error updating KEK info on server: {error}")
+        return False, error
+    print(f"KEK updated successfully for user {user.username} with new timestamp {new_timestamp}")
+    print(f"New KEK: {new_kek_info}")
+    db.session.commit()
+    MasterKey().clear()
+    return True, None
+
+def derive_master_key(password, salt):
+    """Derive a master key from password and salt, and set it in MasterKey singleton."""
+    master_key = MasterKey().derive_key(password, salt)
+    MasterKey().set_key(master_key)
+    return master_key
+
+def decrypt_kek_with_error_handling(kek_info, user_uuid, password, salt):
+    """Try to decrypt KEK with error handling, returning (kek, error_message)."""
+    try:
+        # Derive the master key from password and salt
+        master_key = derive_master_key(password, salt)
+        print(kek_info)
+        print(f"User UUID: {user_uuid}")
+        kek, _ = try_decrypt_kek(
+            kek_info,
+            user_uuid=user_uuid,
+            master_key=master_key
+        )
+    except Exception as e:
+        # MasterKey().clear()
+        return None, 'Failed to decrypt KEK with provided password.'
+    return kek, None
+
+# def decrypt_vault_with_error_handling(vault, master_key, user):
+#     """Try to decrypt vault private keys and OPKs, returning (identity_private_bytes, spk_private_bytes, decrypted_opks, error_message)."""
+#     try:
+#         identity_private_bytes, spk_private_bytes = try_decrypt_private_keys(vault, master_key)
+#         decrypted_opks = decrypt_all_opks(user.opks_json, master_key)
+#         return identity_private_bytes, spk_private_bytes, decrypted_opks, None
+#     except Exception:
+#         MasterKey().clear()
+#         return None, None, None, 'Failed to decrypt vault with provided password.'
+
+def check_kek_freshness(user):
+    """
+    Fetch the latest KEK info from the server and compare updated_at with the local user's KEK.
+    Returns (True, None) if up-to-date, (False, error_message) if not.
+    """
+    server_kek_info, server_error = server.get_kek_info(user.uuid)
+    if server_error or not server_kek_info:
+        return False, 'Failed to communicate with the server to verify KEK freshness.'
+    server_updated_at = server_kek_info.get('updated_at')
+    local_updated_at = user.kek.updated_at
+    if server_updated_at and local_updated_at != server_updated_at:
+        return False, f"Your password was changed on another device. Please use the new password. Server updated at: {server_updated_at}"
+    return True, None
+

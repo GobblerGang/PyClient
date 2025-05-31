@@ -87,6 +87,8 @@ def generate_user_vault(identity_private, identity_public, spk_private, spk_publ
             "private_enc": b64e(opk_enc),
             "private_nonce": b64e(opk_nonce)
         })
+    # print(f"Salt length pre encode: {len(salt)}")
+    # print(f"Salt length post encode: {len(b64e(salt))}")
     return Vault(
         salt=b64e(salt),
         identity_key_public=b64e(identity_public.public_bytes(

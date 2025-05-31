@@ -16,7 +16,7 @@ from utils.key_utils import (
 from utils.secure_master_key import MasterKey
 from session_manager import clear_session
 import utils.server_utils as server
-from services.auth_service import create_user_service, import_user_keys_service, login_user_service
+from services.auth_service import create_user_service, import_user_keys_service, login_user_service, change_password_service
 from utils.dataclasses import Vault
 from services.kek_service import encrypt_kek
 from cryptography.exceptions import InvalidTag
@@ -63,7 +63,8 @@ def signup():
             flash('Password is required')
             return redirect(url_for('auth.signup'))
         
-        salt, master_key = MasterKey().derive_key(password)
+        salt = os.urandom(16)
+        master_key = MasterKey().derive_key(password, salt)
         MasterKey().set_key(master_key)
         
         # Generate KEK
@@ -79,16 +80,20 @@ def signup():
         vault = generate_user_vault(identity_private, identity_public, spk_private, spk_public, spk_signature, salt, kek, opks)
         
         user_uuid, error = server.get_new_user_uuid()
+        user_uuid_str = str(user_uuid)
+        # print(f'User UUID: {user_uuid}, Error: {error}')
         if error:
             flash(f'Error communicating with the server. Please try again later')
             return redirect(url_for('auth.signup'))
         
         
         # Encrypt KEK with the master key, timestamp and user UUID as AAD
-        kek_dict = encrypt_kek(user_uuid, kek, master_key)
-        
+        kek_dict = encrypt_kek(kek, master_key, user_uuid_str)
+        # print("enc_kek:", kek_dict['enc_kek'])
+        # print("kek_nonce:", kek_dict['kek_nonce'])
+        # print("aad:", kek_dict['aad'])
         # Sends user info to server and stores user in local database
-        user, error = create_user(username, email, vault, kek_dict)
+        user, error = create_user(username, email, vault,user_uuid_str, kek_dict)
         if not user:
             print(f'Error creating user: {error}')
             flash(f'Failed to create user: {error}')
@@ -129,45 +134,11 @@ def change_password():
         old_password = request.form.get('old_password')
         new_password = request.form.get('new_password')
         user = User.query.get(current_user.id)
-        vault = get_user_vault(user)
-        try:
-            old_salt = base64.b64decode(vault.salt)
-            old_master_key = MasterKey().derive_key(old_password, old_salt)
-            MasterKey().set_key(old_master_key)
-            identity_private_bytes, spk_private_bytes = try_decrypt_private_keys(vault, old_master_key)
-            decrypted_opks = decrypt_all_opks(user.opks_json, old_master_key)
-        except Exception:
-            flash('Old password is incorrect.')
-            MasterKey().clear()
+        success, error = change_password_service(user, old_password, new_password)
+        if not success:
+            flash(f"Error changing password: {error}")
             return render_template('change_password.html')
-        new_salt = os.urandom(16)
-        new_master_key = MasterKey().derive_key(new_password, new_salt)
-        MasterKey().set_key(new_master_key)
-        
-        identity_private = ed25519.Ed25519PrivateKey.from_private_bytes(identity_private_bytes)
-        spk_private = x25519.X25519PrivateKey.from_private_bytes(spk_private_bytes)
-        opk_keypairs = keypairs_from_opk_bytes(decrypted_opks)
-        spk_public = spk_private.public_key()
-        spk_signature = base64.b64decode(user.signed_prekey_signature)
-        new_vault = generate_user_vault(
-            identity_private,
-            identity_private.public_key(),
-            spk_private,
-            spk_public,
-            spk_signature,
-            new_salt,
-            new_master_key,
-            opk_keypairs
-        )
-        user.salt = new_vault.salt
-        user.identity_key_private_enc = new_vault.identity_key_private_enc
-        user.identity_key_private_nonce = new_vault.identity_key_private_nonce
-        user.signed_prekey_private_enc = new_vault.signed_prekey_private_enc
-        user.signed_prekey_private_nonce = new_vault.signed_prekey_private_nonce
-        user.opks_json = json.dumps(new_vault.opks)
-        db.session.commit()
         flash('Password changed successfully!')
-        MasterKey().clear()
         return redirect(url_for('dashboard.dashboard'))
     return render_template('change_password.html')
 

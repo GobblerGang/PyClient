@@ -37,7 +37,7 @@ class MasterKey:
                 self._key = os.urandom(len(self._key))
                 self._key = None
     
-    def derive_key(self, password: str) -> tuple[bytes, bytes]:
+    def derive_key(self, password: str, salt ) -> tuple[bytes, bytes]:
         """Derive a master key from a password and salt."""
-        salt = os.urandom(16)
-        return salt, CryptoUtils.derive_master_key(password, salt)
+        # print(f"Derived salt: {len(salt)} bytes")
+        return CryptoUtils.derive_master_key(password, salt)

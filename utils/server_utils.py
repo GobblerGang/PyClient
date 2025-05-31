@@ -1,12 +1,31 @@
-"""This module currently contains temporary functions for future server operations."""
 import requests
 from config import SERVER_URL, SERVER_PORT
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 import base64
+import json
+
+
+api_url = f"{SERVER_URL}:{SERVER_PORT}/api"
+
+#---Helper functions for server communication---
+def parse_server_response(response):
+    try:
+        data = response.json()
+        print(f"Server response code: {response.status_code}")
+    except Exception:
+        data = {}
+    if response.status_code != 200:
+        error_msg = data.get('error', f'HTTP {response.status_code}')
+        return None, error_msg
+    if 'error' in data:
+        return None, data['error']
+    return data, None
+
+# def send_request()
 
 def get_server_nonce(user_uuid: str):
-    server_url = f"{SERVER_URL}:{SERVER_PORT}/api/nonce"
-    response = requests.get(server_url, params={"user_uuid": user_uuid})
+    server_url = f"{SERVER_URL}:{SERVER_PORT}/api/nonce/{user_uuid}"
+    response = requests.get(server_url)
     response.raise_for_status()
     return response.json()["nonce"]
 
@@ -15,16 +34,23 @@ def sign_payload(payload: bytes, nonce: str, private_key: Ed25519PrivateKey) -> 
     signature = private_key.sign(message)
     return base64.b64encode(signature).decode()
 
-def set_headers(private_key: Ed25519PrivateKey, user_id: str, payload: bytes):
+def set_headers(private_key: Ed25519PrivateKey, user_uuid: str, payload):
     """
     Set headers for server requests, including signature, nonce and user ID.
+    Accepts payload as dict or bytes. If dict, will encode as JSON bytes.
     """
-    nonce = get_server_nonce(user_id)
+    if isinstance(payload, dict):
+        payload_bytes = json.dumps(payload).encode()
+    elif isinstance(payload, bytes):
+        payload_bytes = payload
+    else:
+        raise TypeError("Payload must be dict or bytes")
+    nonce = get_server_nonce(user_uuid)
     if not nonce:
         raise ValueError("Failed to retrieve nonce from server.")
-    signature = sign_payload(payload, nonce, private_key)
+    signature = sign_payload(payload_bytes, nonce, private_key)
     return {
-        "X-User-ID": str(user_id),
+        "X-User-UUID": user_uuid,
         "X-Nonce": nonce,
         "X-Signature": signature,
     }
@@ -36,6 +62,7 @@ def create_user(user_data):
     """
     try:
         server_url = f"{SERVER_URL}:{SERVER_PORT}/api/register"
+        # print(f"Creating user at {server_url} with data: {user_data}")
         response = requests.post(server_url, json=user_data)
         # Try to parse JSON even on error status
         try:
@@ -67,18 +94,49 @@ def get_new_user_uuid():
     url = f"{SERVER_URL}:{SERVER_PORT}/api/generate-uuid"
     try:
         response = requests.get(url)
+        print(f"Server response code: {response.status_code}")
+        # print(f"Response from server: {response.status_code}, {response.text}")
         if response.status_code != 200:
             try:
                 error_msg = response.json().get('error', 'Unknown error')
             except Exception:
                 error_msg = 'Unknown error'
             return None, error_msg
-        data = response.json.get('uuid')
+        data = response.json().get('uuid')
         if 'error' in data:
             return None, data['error']
         return data, None
     except Exception as e:
         return None, str(e)
+
+def get_kek_info(user_uuid: str):
+    url = f"{api_url}/kek/{user_uuid}"
+    response = requests.get(url)
+    data, error = parse_server_response(response)
+    if error:
+        return None, error
+    return data, None
+
+def update_kek_info(encrypted_kek: str, kek_nonce: str, updated_at:str, user_uuid: str, ik_priv: Ed25519PrivateKey):
+    """
+    Update the KEK information for a user.
+    Takes ik_priv as param for header signature.
+    Takes user_uuid from header
+    Accepts a dict with KEK information.
+    Returns a tuple: (success, error).
+    """
+    url = f"{api_url}/change-password"
+    payload_dict= {
+        "enc_kek_cyphertext": encrypted_kek,
+        "nonce": kek_nonce,
+        "updated_at": updated_at,
+    }
+    headers = set_headers(private_key=ik_priv, user_uuid=user_uuid, payload=payload_dict)
+    response = requests.put(url, json=payload_dict, headers=headers)
+    data, error = parse_server_response(response)
+    if error:
+        return False, error
+    return data, None
 
 def get_user_by_name(username: str):
     """
@@ -96,21 +154,13 @@ def get_user_by_name(username: str):
     Returns a tuple: (data, error), where `data` is the user information if found,
     and `error` is an error message if the user is not found or an exception occurs.
     """
-    url = f"{SERVER_URL}:{SERVER_PORT}/api/users/{username}"
-    try:
-        response = requests.get(url)
-        if response.status_code != 200:
-            try:
-                error_msg = response.json().get('error', 'Unknown error')
-            except Exception:
-                error_msg = 'Unknown error'
-            return None, error_msg
-        data = response.json()
-        if 'error' in data:
-            return None, data['error']
-        return data, None
-    except Exception as e:
-        return None, str(e)
+    url = f"{url}/users/{username}"
+    response = requests.get(url)
+    data, error = parse_server_response(response)
+    if error:
+        return None, error
+    return data, None
+
     
 
 def upload_file(file_ciphertext: bytes, file_name: str, file_uuid: str, owner_id: str, **args):
@@ -225,3 +275,4 @@ def get_user_pacs(user_id: str, private_key: Ed25519PrivateKey):
     except Exception as e:
         print(f"Error retrieving PACs: {e}")
         return {"received_pacs": [], "issued_pacs": []}
+
