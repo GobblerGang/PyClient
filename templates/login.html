@@ -25,6 +25,9 @@
                 </form>
                 <div class="text-center mt-3">
                     <p>Don't have an account? <a href="{{ url_for('auth.signup') }}">Sign up here</a></p>
+                    <form method="GET" action="{{ url_for('auth.import_user_keys') }}" class="mt-2">
+                        <button type="submit" class="btn btn-secondary">Import Keys</button>
+                    </form>
                 </div>
             </div>
         </div>

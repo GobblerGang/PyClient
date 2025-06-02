@@ -1,11 +1,11 @@
 import requests
-from config import SERVER_URL, SERVER_PORT
+from config import SERVER_URL
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 import base64
 import json
 
 
-api_url = f"{SERVER_URL}:{SERVER_PORT}/api"
+api_url = f"{SERVER_URL}/api"
 
 #---Helper functions for server communication---
 def parse_server_response(response):
@@ -24,7 +24,7 @@ def parse_server_response(response):
 # def send_request()
 
 def get_server_nonce(user_uuid: str):
-    server_url = f"{SERVER_URL}:{SERVER_PORT}/api/nonce/{user_uuid}"
+    server_url = f"{SERVER_URL}/api/nonce/{user_uuid}"
     response = requests.get(server_url)
     response.raise_for_status()
     return response.json()["nonce"]
@@ -61,7 +61,7 @@ def create_user(user_data):
     Accepts a user_data dict and returns a dict with keys: success, uuid, error (if any).
     """
     try:
-        server_url = f"{SERVER_URL}:{SERVER_PORT}/api/register"
+        server_url = f"{SERVER_URL}/api/register"
         # print(f"Creating user at {server_url} with data: {user_data}")
         response = requests.post(server_url, json=user_data)
         # Try to parse JSON even on error status
@@ -91,23 +91,22 @@ def get_new_user_uuid():
     Get a new UUID for a user from the server.
     Returns a string UUID or None if an error occurs.
     """
-    url = f"{SERVER_URL}:{SERVER_PORT}/api/generate-uuid"
-    try:
-        response = requests.get(url)
-        print(f"Server response code: {response.status_code}")
-        # print(f"Response from server: {response.status_code}, {response.text}")
-        if response.status_code != 200:
-            try:
-                error_msg = response.json().get('error', 'Unknown error')
-            except Exception:
-                error_msg = 'Unknown error'
-            return None, error_msg
-        data = response.json().get('uuid')
-        if 'error' in data:
-            return None, data['error']
-        return data, None
-    except Exception as e:
-        return None, str(e)
+    url = f"{SERVER_URL}/api/generate-uuid"
+    response = requests.get(url)
+    print(f"Server response code: {response.status_code}")
+    # print(f"Response from server: {response.status_code}, {response.text}")
+    if response.status_code != 200:
+        try:
+            error_msg = response.json().get('error', 'Unknown error')
+        except Exception:
+            error_msg = 'Unknown error'
+        return None, error_msg
+    data = response.json().get('uuid')
+    if 'error' in data:
+        return None, data['error']
+    return data, None
+        # except Exception as e:
+        # return None, str(e)
 
 def get_kek_info(user_uuid: str):
     url = f"{api_url}/kek/{user_uuid}"
@@ -154,7 +153,7 @@ def get_user_by_name(username: str):
     Returns a tuple: (data, error), where `data` is the user information if found,
     and `error` is an error message if the user is not found or an exception occurs.
     """
-    url = f"{url}/users/{username}"
+    url = f"{api_url}/users/{username}"
     response = requests.get(url)
     data, error = parse_server_response(response)
     if error:
@@ -238,7 +237,7 @@ def download_file(file_uuid: str):
     }
     """
     try:
-        server_url = f"{SERVER_URL}:{SERVER_PORT}/api/files/{file_uuid}"
+        server_url = f"{SERVER_URL}/api/files/{file_uuid}"
         response = requests.get(server_url)
         response.raise_for_status()
         return response.json()  # Expecting JSON, not raw content
@@ -252,7 +251,7 @@ def get_owned_files(user_id: str, private_key: Ed25519PrivateKey):
     Returns a list of FileInfo JSON dicts.
     """
     try:
-        server_url = f"{SERVER_URL}:{SERVER_PORT}/api/files/owned"
+        server_url = f"{SERVER_URL}/api/files/owned"
         headers = set_headers(private_key, user_id, b"")
         response = requests.get(server_url, headers=headers)
         response.raise_for_status()
@@ -267,7 +266,7 @@ def get_user_pacs(user_id: str, private_key: Ed25519PrivateKey):
     Returns a dict: { 'received_pacs': [...], 'issued_pacs': [...] }
     """
     try:
-        server_url = f"{SERVER_URL}:{SERVER_PORT}/api/files/pacs/"
+        server_url = f"{SERVER_URL}/api/files/pacs/"
         headers = set_headers(private_key, user_id, b"")
         response = requests.get(server_url, headers=headers)
         response.raise_for_status()

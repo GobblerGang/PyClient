@@ -11,9 +11,8 @@ import utils.server_utils as server
 from utils.dataclasses import Vault
 from utils.crypto_utils import CryptoUtils
 from cryptography.exceptions import InvalidTag
-import datetime
 from services.kek_service import format_aad, encrypt_kek
-from cryptography.hazmat.primitives.asymmetric import ed25519, x25519
+from cryptography.hazmat.primitives.asymmetric import ed25519
 import os
 
 def create_user_service(username, email, vault: Vault, user_uuid, kek_dict: dict):
@@ -81,6 +80,8 @@ def create_user_service(username, email, vault: Vault, user_uuid, kek_dict: dict
     return user, None
 
 def import_user_keys_service(username, password, keyfile):
+    if User.query.filter_by(username=username).first():
+        return None, 'User already exists. Please log in.'
     try:
         keys = json.load(keyfile)
     except Exception:
@@ -89,7 +90,15 @@ def import_user_keys_service(username, password, keyfile):
     if error:
         return None, f'Error fetching user data: {error}'
     salt = base64.b64decode(server_user['salt']) if isinstance(server_user['salt'], str) else server_user['salt']
-    master_key = MasterKey().derive_key(password, salt)
+    master_key = derive_master_key(password, salt)
+    
+    kek_info, error = server.get_kek_info(server_user['uuid'])
+    if error or not kek_info:
+        # MasterKey().clear()
+        return None, 'Failed to communicate with the server.'
+    
+    kek, _ = try_decrypt_kek(kek_info=kek_info, user_uuid=server_user['uuid'], master_key=master_key)
+    
     vault = Vault(
         identity_key_public=keys['identity_key_public'],
         signed_prekey_public=keys['signed_prekey_public'],
@@ -102,7 +111,7 @@ def import_user_keys_service(username, password, keyfile):
         opks=keys['opks']
     )
     try:
-        identity_private_bytes, spk_private_bytes = try_decrypt_private_keys(vault, master_key)
+        identity_private_bytes, spk_private_bytes = try_decrypt_private_keys(vault, kek)
         if not verify_decrypted_keys(identity_private_bytes, spk_private_bytes, vault):
             return None, 'Key verification failed. Wrong password or corrupted file.'
     except Exception:
@@ -121,8 +130,20 @@ def import_user_keys_service(username, password, keyfile):
         opks_json=json.dumps(keys['opks']),
         uuid=server_user.get('uuid')
     )
+    
     db.session.add(user)
     db.session.commit()
+    
+    kek = KEK(
+        enc_kek=kek_info['enc_kek_cyphertext'],
+        kek_nonce=kek_info['nonce'],
+        user_id=user.id,
+        updated_at=kek_info['updated_at']
+    )
+    
+    db.session.add(kek)
+    db.session.commit()
+    
     return user, None
 
 def login_user_service(username: str, password: str):
@@ -272,6 +293,7 @@ def check_kek_freshness(user):
         return False, 'Failed to communicate with the server to verify KEK freshness.'
     server_updated_at = server_kek_info.get('updated_at')
     local_updated_at = user.kek.updated_at
+    print(f"Local updated_at: {local_updated_at}, Server updated_at: {server_updated_at}")
     if server_updated_at and local_updated_at != server_updated_at:
         return False, f"Your password was changed on another device. Please use the new password. Server updated at: {server_updated_at}"
     return True, None
