@@ -66,7 +66,7 @@ def share_file(file_uuid):
         recipient_username = request.form.get('username')
         
         try:
-            identity_private_key = User.get_identity_private_key(self=current_user, kek=kek)
+            identity_private_key = current_user.get_identity_private_key(kek)
             _ = share_file_with_user_service(file_info=file, recipient_username=recipient_username, user=current_user, private_key=identity_private_key, kek=kek)    
             flash(f'File shared with {recipient_username}')
         except Exception as e:
@@ -81,7 +81,7 @@ def revoke_access(file_uuid, user_uuid):
     _, issued_pacs = refresh_pacs_service(current_user, current_user.get_identity_private_key(master_key))
     file = next((f for f in issued_pacs if f.file_uuid == file_uuid), None)
     
-    if file.owner_id != current_user.uuid:
+    if file.owner_uuid != current_user.uuid:
         flash('You do not have permission to revoke access')
         return redirect(url_for('file.list_files'))
     try:

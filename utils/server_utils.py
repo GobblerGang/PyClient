@@ -14,8 +14,10 @@ def parse_server_response(response):
     try:
         data = response.json()
         print(f"Server response code: {response.status_code}")
-    except Exception:
+        response.raise_for_status()  # Raise an error for bad status codes
+    except Exception as e:
         data = {}
+        return None, f"Error parsing server response: {e}"
     # Only return error if 'error' is present in the response data
     if 'error' in data:
         return None, data['error']
@@ -162,7 +164,7 @@ def get_user_by_name(username: str):
         return None, error
     return data, None
 
-def upload_file(file_ciphertext: bytes, file_name: str, owner_uuid: str, mime_type: str, file_nonce: str, enc_file_k: bytes, k_file_nonce: str, private_key: bytes):
+def upload_file(file_ciphertext: bytes, file_name: str, owner_uuid: str, mime_type: str, file_nonce: str, enc_file_k: bytes, k_file_nonce: str, private_key: Ed25519PrivateKey):
     """
     NOTE: This function will be used to upload a file to the server.
     Expected JSON body structure:
