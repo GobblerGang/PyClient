@@ -4,6 +4,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 import base64
 import json
 
+from utils.dataclasses import PAC
+
 
 api_url = f"{SERVER_URL}/api"
 
@@ -14,9 +16,7 @@ def parse_server_response(response):
         print(f"Server response code: {response.status_code}")
     except Exception:
         data = {}
-    if response.status_code != 200:
-        error_msg = data.get('error', f'HTTP {response.status_code}')
-        return None, error_msg
+    # Only return error if 'error' is present in the response data
     if 'error' in data:
         return None, data['error']
     return data, None
@@ -63,6 +63,7 @@ def create_user(user_data):
     try:
         server_url = f"{SERVER_URL}/api/register"
         # print(f"Creating user at {server_url} with data: {user_data}")
+        print(f"{json.dumps(user_data, indent=2)}")
         response = requests.post(server_url, json=user_data)
         # Try to parse JSON even on error status
         try:
@@ -145,7 +146,8 @@ def get_user_by_name(username: str):
         "id": int,
         "username": str,
         "email": str,
-        "identity_key_public": str,
+        "ed25519_identity_key_public": str,
+        "x25519_identity_key_public": str,
         "signed_prekey_public": str,
         "signed_prekey_signature": str,
         "opks": dict (may not use these)
@@ -160,69 +162,80 @@ def get_user_by_name(username: str):
         return None, error
     return data, None
 
-    
-
-def upload_file(file_ciphertext: bytes, file_name: str, file_uuid: str, owner_id: str, **args):
+def upload_file(file_ciphertext: bytes, file_name: str, owner_uuid: str, mime_type: str, file_nonce: str, enc_file_k: bytes, k_file_nonce: str, private_key: bytes):
     """
     NOTE: This function will be used to upload a file to the server.
     Expected JSON body structure:
     {
-        "file_uuid": str,  # UUID
         "file_name": str,
         "enc_file_ciphertext": base64 encoded,
-        "owner_id": str,  # UUID
         "mime_type": str,
         "file_nonce": str,
         "enc_file_k": str,
         "k_file_nonce": str
     }
     """
-    print(f"Uploading {file_name} for user {owner_id} (file UUID: {file_uuid})...")
-    return True  # Simulate successful upload
+    payload = {
+        "file_name": file_name,
+        "enc_file_ciphertext": base64.b64encode(file_ciphertext).decode(),
+        "mime_type": mime_type,
+        "file_nonce": base64.b64encode(file_nonce).decode(),
+        "enc_file_k": base64.b64encode(enc_file_k).decode(),
+        "k_file_nonce": base64.b64encode(k_file_nonce).decode()
+    }
+    headers = set_headers(private_key=private_key, user_uuid=owner_uuid, payload=payload)
+    url = f"{SERVER_URL}/api/files/upload"
+    response = requests.post(url, json=payload, headers=headers)
+    data, error = parse_server_response(response)
+    return data, error
 
-def get_user_keys(user_uuid: str):
+def get_user_keys(sender_user_uuid: str, recipient_uuid, private_key: Ed25519PrivateKey):
     """
     NOTE: This function will be used to retrieve a user's keys from the server.
-    It currently does not implement actual key retrieval logic.
     Expected JSON response structure:
     {
-        "identity_key_public": str,
+        "ed25519_identity_key_public": str,
+        "x25519_identity_key_public": str,
         "signed_prekey_public": str,
         "signed_prekey_signature": str,
         "opks": dict (may not use these)
     }
     """
-    from models.models import User
-    user = User.query.filter_by(uuid=user_uuid).first()
-    if user:
-        return {
-            "identity_key_public": user.identity_key_public,
-            "signed_prekey_public": user.signed_prekey_public,
-            "signed_prekey_signature": user.signed_prekey_signature,
-            "opks": user.opks_json
-        }
-    return None  # User not found
+    server_url = f"{SERVER_URL}/api/users/keys/{recipient_uuid}"
+    headers = set_headers(private_key=private_key, user_uuid=sender_user_uuid, payload=b"")
+    response = requests.get(server_url, headers=headers)
+    data, error = parse_server_response(response)
+    return data, error
 
-def send_pac(pac):
+def send_pac(pac: PAC, sender_uuid: str, private_key: Ed25519PrivateKey):
     """
     Temporary placeholder for sending a PAC to the server.
     Accepts the PAC object as a parameter.
     Expected JSON body structure:
     {
-        "recipient_id": int,
-        "file_id": int,
+        "recipient_uuid": int,
+        "file_uuid": int,
         "valid_until": str,
         "encrypted_file_key": str,
         "signature": str,
-        "issuer_id": int,
         "sender_ephemeral_public": str,
         "k_file_nonce": str,
-        "filename": str,
-        "mime_type": str
     }
     """
-    print(f"PAC sent: {pac}")
-    return True
+    payload = {
+        "recipient_uuid": pac.recipient_id,
+        "file_uuid": pac.file_uuid,
+        "valid_until": pac.valid_until,
+        "encrypted_file_key": pac.encrypted_file_key,
+        "signature": pac.signature,
+        "sender_ephemeral_public": pac.sender_ephemeral_public,
+        "k_file_nonce": pac.k_file_nonce,
+    }
+    headers= set_headers(private_key=private_key, user_uuid=sender_uuid, payload=payload)
+    server_url = f"{SERVER_URL}/api/files/share"
+    response = requests.post(server_url, json=payload, headers=headers)
+    data, error = parse_server_response(response)
+    return data, error
 
 def download_file(file_uuid: str):
     """
@@ -250,15 +263,14 @@ def get_owned_files(user_id: str, private_key: Ed25519PrivateKey):
     Retrieve all files owned by the user using the X-User-ID header.
     Returns a list of FileInfo JSON dicts.
     """
-    try:
-        server_url = f"{SERVER_URL}/api/files/owned"
-        headers = set_headers(private_key, user_id, b"")
-        response = requests.get(server_url, headers=headers)
-        response.raise_for_status()
-        return response.json().get('owned_files', [])
-    except Exception as e:
-        print(f"Error retrieving owned files: {e}")
-        return []
+    server_url = f"{SERVER_URL}/api/files/owned"
+    headers = set_headers(private_key, user_id, b"")
+    # response = requests.get(server_url, headers=headers)
+    # response.raise_for_status()
+    # return response.json().get('owned_files', [])
+    response = requests.get(server_url, headers=headers)
+    data, error = parse_server_response(response)
+    return data, error
 
 def get_user_pacs(user_id: str, private_key: Ed25519PrivateKey):
     """
@@ -266,7 +278,7 @@ def get_user_pacs(user_id: str, private_key: Ed25519PrivateKey):
     Returns a dict: { 'received_pacs': [...], 'issued_pacs': [...] }
     """
     try:
-        server_url = f"{SERVER_URL}/api/files/pacs/"
+        server_url = f"{SERVER_URL}/api/files/pacs"
         headers = set_headers(private_key, user_id, b"")
         response = requests.get(server_url, headers=headers)
         response.raise_for_status()
@@ -275,3 +287,13 @@ def get_user_pacs(user_id: str, private_key: Ed25519PrivateKey):
         print(f"Error retrieving PACs: {e}")
         return {"received_pacs": [], "issued_pacs": []}
 
+def get_file_info(file_uuid: str, user_uuid: str, private_key: Ed25519PrivateKey):
+    """
+    Retrieve file information by UUID.
+    Returns a dict with file information or None if not found.
+    """
+    server_url = f"{SERVER_URL}/api/files/info/{file_uuid}"
+    headers = set_headers(private_key, user_uuid, b"")
+    response = requests.get(server_url, headers=headers)
+    data, error = parse_server_response(response)
+    return data, error

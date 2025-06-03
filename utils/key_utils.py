@@ -13,11 +13,14 @@ def b64e(b):
 def get_user_vault(user):
     return Vault(
         salt=user.salt,
-        identity_key_public=user.identity_key_public,
+        ed25519_identity_key_public=user.ed25519_identity_key_public,
+        ed25519_identity_key_private_enc=user.ed25519_identity_key_private_enc,
+        ed25519_identity_key_private_nonce=user.ed25519_identity_key_private_nonce,
+        x25519_identity_key_public=user.x25519_identity_key_public,
+        x25519_identity_key_private_enc=user.x25519_identity_key_private_enc,
+        x25519_identity_key_private_nonce=user.x25519_identity_key_private_nonce,
         signed_prekey_public=user.signed_prekey_public,
         signed_prekey_signature=user.signed_prekey_signature,
-        identity_key_private_enc=user.identity_key_private_enc,
-        identity_key_private_nonce=user.identity_key_private_nonce,
         signed_prekey_private_enc=user.signed_prekey_private_enc,
         signed_prekey_private_nonce=user.signed_prekey_private_nonce,
         opks=user.opks_json if user.opks_json else []
@@ -25,20 +28,30 @@ def get_user_vault(user):
 
 
 def try_decrypt_private_keys(vault: Vault, kek: bytes):
-    ik_enc = base64.b64decode(vault.identity_key_private_enc)
-    ik_nonce = base64.b64decode(vault.identity_key_private_nonce)
+    ed_ik_enc = base64.b64decode(vault.ed25519_identity_key_private_enc)
+    ed_ik_nonce = base64.b64decode(vault.ed25519_identity_key_private_nonce)
+    x_ik_enc = base64.b64decode(vault.x25519_identity_key_private_enc)
+    x_ik_nonce = base64.b64decode(vault.x25519_identity_key_private_nonce)
     spk_enc = base64.b64decode(vault.signed_prekey_private_enc)
     spk_nonce = base64.b64decode(vault.signed_prekey_private_nonce)
-    identity_private_bytes = CryptoUtils.decrypt_with_key(ik_nonce, ik_enc, kek, b'identity_key')
+    ed_identity_private_bytes = CryptoUtils.decrypt_with_key(ed_ik_nonce, ed_ik_enc, kek, b'ed25519_identity_key')
+    x_identity_private_bytes = CryptoUtils.decrypt_with_key(x_ik_nonce, x_ik_enc, kek, b'x25519_identity_key')
     spk_private_bytes = CryptoUtils.decrypt_with_key(spk_nonce, spk_enc, kek, b'signed_prekey')
-    return identity_private_bytes, spk_private_bytes
+    return ed_identity_private_bytes, x_identity_private_bytes, spk_private_bytes
 
-def verify_decrypted_keys(identity_private_bytes, spk_private_bytes, vault: Vault):
-    identity_private = ed25519.Ed25519PrivateKey.from_private_bytes(identity_private_bytes)
+
+def verify_decrypted_keys(ed_identity_private_bytes, x_identity_private_bytes, spk_private_bytes, vault: Vault):
+    ed_identity_private = ed25519.Ed25519PrivateKey.from_private_bytes(ed_identity_private_bytes)
+    x_identity_private = x25519.X25519PrivateKey.from_private_bytes(x_identity_private_bytes)
     spk_private = x25519.X25519PrivateKey.from_private_bytes(spk_private_bytes)
-    identity_public = identity_private.public_key()
+    ed_identity_public = ed_identity_private.public_key()
+    x_identity_public = x_identity_private.public_key()
     spk_public = spk_private.public_key()
-    identity_public_b64 = base64.b64encode(identity_public.public_bytes(
+    ed_identity_public_b64 = base64.b64encode(ed_identity_public.public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw
+    )).decode()
+    x_identity_public_b64 = base64.b64encode(x_identity_public.public_bytes(
         encoding=serialization.Encoding.Raw,
         format=serialization.PublicFormat.Raw
     )).decode()
@@ -47,19 +60,35 @@ def verify_decrypted_keys(identity_private_bytes, spk_private_bytes, vault: Vaul
         format=serialization.PublicFormat.Raw
     )).decode()
     return (
-        identity_public_b64 == vault.identity_key_public and
+        ed_identity_public_b64 == vault.ed25519_identity_key_public and
+        x_identity_public_b64 == vault.x25519_identity_key_public and
         spk_public_b64 == vault.signed_prekey_public
     )
 
-def generate_user_vault(identity_private, identity_public, spk_private, spk_public, spk_signature, salt, kek, opks):
-    ik_nonce, ik_enc = CryptoUtils.encrypt_with_key(
-        identity_private.private_bytes(
+def generate_user_vault(
+    ed25519_identity_private, ed25519_identity_public,
+    x25519_identity_private, x25519_identity_public,
+    spk_private, spk_public, spk_signature, salt, kek, opks
+):
+    # Encrypt both identity privates
+    ed_ik_nonce, ed_ik_enc = CryptoUtils.encrypt_with_key(
+        ed25519_identity_private.private_bytes(
             encoding=serialization.Encoding.Raw,
             format=serialization.PrivateFormat.Raw,
             encryption_algorithm=serialization.NoEncryption()
         ),
         kek,
-        b'identity_key')
+        b'ed25519_identity_key'
+    )
+    x_ik_nonce, x_ik_enc = CryptoUtils.encrypt_with_key(
+        x25519_identity_private.private_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PrivateFormat.Raw,
+            encryption_algorithm=serialization.NoEncryption()
+        ),
+        kek,
+        b'x25519_identity_key'
+    )
     spk_nonce, spk_enc = CryptoUtils.encrypt_with_key(
         spk_private.private_bytes(
             encoding=serialization.Encoding.Raw,
@@ -87,21 +116,25 @@ def generate_user_vault(identity_private, identity_public, spk_private, spk_publ
             "private_enc": b64e(opk_enc),
             "private_nonce": b64e(opk_nonce)
         })
-    # print(f"Salt length pre encode: {len(salt)}")
-    # print(f"Salt length post encode: {len(b64e(salt))}")
     return Vault(
         salt=b64e(salt),
-        identity_key_public=b64e(identity_public.public_bytes(
+        ed25519_identity_key_public=b64e(ed25519_identity_public.public_bytes(
             encoding=serialization.Encoding.Raw,
             format=serialization.PublicFormat.Raw
         )),
+        ed25519_identity_key_private_enc=b64e(ed_ik_enc),
+        ed25519_identity_key_private_nonce=b64e(ed_ik_nonce),
+        x25519_identity_key_public=b64e(x25519_identity_public.public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw
+        )),
+        x25519_identity_key_private_enc=b64e(x_ik_enc),
+        x25519_identity_key_private_nonce=b64e(x_ik_nonce),
         signed_prekey_public=b64e(spk_public.public_bytes(
             encoding=serialization.Encoding.Raw,
             format=serialization.PublicFormat.Raw
         )),
         signed_prekey_signature=b64e(spk_signature),
-        identity_key_private_enc=b64e(ik_enc),
-        identity_key_private_nonce=b64e(ik_nonce),
         signed_prekey_private_enc=b64e(spk_enc),
         signed_prekey_private_nonce=b64e(spk_nonce),
         opks=opks_json_list

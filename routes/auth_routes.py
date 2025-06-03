@@ -70,14 +70,21 @@ def signup():
         # Generate KEK
         kek = os.urandom(32)
         
-        # generate identity keypair, signed prekey pair
-        identity_private, identity_public = CryptoUtils.generate_identity_keypair()
-        spk_private, spk_public, spk_signature = CryptoUtils.generate_signed_prekey(identity_private)
-        # generate 100 OPKs
-        opks = [CryptoUtils.generate_identity_keypair() for _ in range(100)]
-        
+        # Generate Ed25519 and X25519 identity keypairs
+        ed25519_identity_private = ed25519.Ed25519PrivateKey.generate()
+        ed25519_identity_public = ed25519_identity_private.public_key()
+        x25519_identity_private = x25519.X25519PrivateKey.generate()
+        x25519_identity_public = x25519_identity_private.public_key()
+        # Generate signed prekey (X25519, signed by Ed25519)
+        spk_private, spk_public, spk_signature = CryptoUtils.generate_signed_prekey(ed25519_identity_private)
+        # Generate 100 X25519 OPKs
+        opks = [(x25519.X25519PrivateKey.generate(), x25519.X25519PrivateKey.generate().public_key()) for _ in range(100)]
         # Encrypt identity and signed prekey private keys with KEK
-        vault = generate_user_vault(identity_private, identity_public, spk_private, spk_public, spk_signature, salt, kek, opks)
+        vault = generate_user_vault(
+            ed25519_identity_private, ed25519_identity_public,
+            x25519_identity_private, x25519_identity_public,
+            spk_private, spk_public, spk_signature, salt, kek, opks
+        )
         
         user_uuid, error = server.get_new_user_uuid()
         user_uuid_str = str(user_uuid)
@@ -151,11 +158,14 @@ def export_user_keys():
     
     vault = get_user_vault(current_user)
     keys = {
-        "identity_key_public": vault.identity_key_public,
+        "ed25519_identity_key_public": vault.ed25519_identity_key_public,
+        "ed25519_identity_key_private_enc": vault.ed25519_identity_key_private_enc,
+        "ed25519_identity_key_private_nonce": vault.ed25519_identity_key_private_nonce,
+        "x25519_identity_key_public": vault.x25519_identity_key_public,
+        "x25519_identity_key_private_enc": vault.x25519_identity_key_private_enc,
+        "x25519_identity_key_private_nonce": vault.x25519_identity_key_private_nonce,
         "signed_prekey_public": vault.signed_prekey_public,
         "signed_prekey_signature": vault.signed_prekey_signature,
-        "identity_key_private_enc": vault.identity_key_private_enc,
-        "identity_key_private_nonce": vault.identity_key_private_nonce,
         "signed_prekey_private_enc": vault.signed_prekey_private_enc,
         "signed_prekey_private_nonce": vault.signed_prekey_private_nonce,
         "opks": vault.opks
