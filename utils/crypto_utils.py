@@ -95,38 +95,6 @@ class CryptoUtils:
         recipient_one_time_prekey_public: x25519.X25519PublicKey = None,
     ) -> bytes:
         """Perform correct 3XDH key exchange as used in Signal."""
-        print("[3XDH SENDER]")
-        print("identity_private:", base64.b64encode(identity_private.private_bytes(
-            encoding=serialization.Encoding.Raw,
-            format=serialization.PrivateFormat.Raw,
-            encryption_algorithm=serialization.NoEncryption()
-        )))
-        print("identity_private public:", base64.b64encode(identity_private.public_key().public_bytes(
-            encoding=serialization.Encoding.Raw,
-            format=serialization.PublicFormat.Raw
-        )))
-        print("ephemeral_private:", base64.b64encode(ephemeral_private.private_bytes(
-            encoding=serialization.Encoding.Raw,
-            format=serialization.PrivateFormat.Raw,
-            encryption_algorithm=serialization.NoEncryption()
-        )))
-        print("ephemeral_private public:", base64.b64encode(ephemeral_private.public_key().public_bytes(
-            encoding=serialization.Encoding.Raw,
-            format=serialization.PublicFormat.Raw
-        )))
-        print("recipient_identity_public:", base64.b64encode(recipient_identity_public.public_bytes(
-            encoding=serialization.Encoding.Raw,
-            format=serialization.PublicFormat.Raw
-        )))
-        print("recipient_signed_prekey_public:", base64.b64encode(recipient_signed_prekey_public.public_bytes(
-            encoding=serialization.Encoding.Raw,
-            format=serialization.PublicFormat.Raw
-        )))
-        if recipient_one_time_prekey_public:
-            print("recipient_one_time_prekey_public:", base64.b64encode(recipient_one_time_prekey_public.public_bytes(
-                encoding=serialization.Encoding.Raw,
-                format=serialization.PublicFormat.Raw
-            )))
         shared1 = ephemeral_private.exchange(recipient_identity_public)
         shared2 = identity_private.exchange(recipient_signed_prekey_public)
         shared3 = ephemeral_private.exchange(recipient_signed_prekey_public)
@@ -151,43 +119,7 @@ class CryptoUtils:
         one_time_prekey_private: x25519.X25519PrivateKey = None    
         ) -> bytes:
         """Perform 3XDH from the receiver's side."""
-        print("[3XDH RECIPIENT]")
-        print("identity_private:", base64.b64encode(identity_private.private_bytes(
-            encoding=serialization.Encoding.Raw,
-            format=serialization.PrivateFormat.Raw,
-            encryption_algorithm=serialization.NoEncryption()
-        )))
-        print("identity_private public:", base64.b64encode(identity_private.public_key().public_bytes(
-            encoding=serialization.Encoding.Raw,
-            format=serialization.PublicFormat.Raw
-        )))
-        print("signed_prekey_private:", base64.b64encode(signed_prekey_private.private_bytes(
-            encoding=serialization.Encoding.Raw,
-            format=serialization.PrivateFormat.Raw,
-            encryption_algorithm=serialization.NoEncryption()
-        )))
-        print("signed_prekey_private public:", base64.b64encode(signed_prekey_private.public_key().public_bytes(
-            encoding=serialization.Encoding.Raw,
-            format=serialization.PublicFormat.Raw
-        )))
-        print("sender_identity_public:", base64.b64encode(sender_identity_public.public_bytes(
-            encoding=serialization.Encoding.Raw,
-            format=serialization.PublicFormat.Raw
-        )))
-        print("sender_ephemeral_public:", base64.b64encode(sender_ephemeral_public.public_bytes(
-            encoding=serialization.Encoding.Raw,
-            format=serialization.PublicFormat.Raw
-        )))
-        if one_time_prekey_private:
-            print("one_time_prekey_private:", base64.b64encode(one_time_prekey_private.private_bytes(
-                encoding=serialization.Encoding.Raw,
-                format=serialization.PrivateFormat.Raw,
-                encryption_algorithm=serialization.NoEncryption()
-            )))
-            print("one_time_prekey_private public:", base64.b64encode(one_time_prekey_private.public_key().public_bytes(
-                encoding=serialization.Encoding.Raw,
-                format=serialization.PublicFormat.Raw
-            )))
+        
         shared1 = identity_private.exchange(sender_ephemeral_public)
         shared2 = signed_prekey_private.exchange(sender_identity_public)
         shared3 = signed_prekey_private.exchange(sender_ephemeral_public)
@@ -273,8 +205,6 @@ class CryptoUtils:
             signature = base64.b64decode(pac["signature"])
             pac_copy = CryptoUtils.canonicalize_pac_dict(pac)
             message = json.dumps(pac_copy, sort_keys=True).encode()
-            # print(f"PAC verification signature: {signature}")
-            # print(f"PAC verification message:{message}")
             issuer_public_key.verify(signature, message)
             return True
         except Exception:
