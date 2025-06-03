@@ -120,12 +120,12 @@ def share_file_with_user_service(file_info, recipient_username: str, user, priva
     # Use X25519 for key exchange
     recipient_identity_public = load_x25519_public_key(recipient_keys["x25519_identity_key_public"])
     recipient_signed_prekey_public = load_x25519_public_key(recipient_keys["signed_prekey_public"])
-    # TODO remove this check in production
-    recipient_user_local = User.query.filter_by(uuid=recipient_user['uuid']).first()
-    print("Local recipient X25519 public key:", recipient_user_local.x25519_identity_key_public)
-    print("Recipient keys x25519_identity_key_public:", recipient_keys["x25519_identity_key_public"])
-    if recipient_user_local.x25519_identity_key_public != recipient_keys["x25519_identity_key_public"]:
-        raise ValueError("Recipient X25519 identity key public does not match local user record")
+    # # TODO remove this check in production
+    # recipient_user_local = User.query.filter_by(uuid=recipient_user['uuid']).first()
+    # print("Local recipient X25519 public key:", recipient_user_local.x25519_identity_key_public)
+    # print("Recipient keys x25519_identity_key_public:", recipient_keys["x25519_identity_key_public"])
+    # if recipient_user_local.x25519_identity_key_public != recipient_keys["x25519_identity_key_public"]:
+    #     raise ValueError("Recipient X25519 identity key public does not match local user record")
     
     # print(f"Recipient identity public key: {recipient_identity_public.public_bytes(encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw)}")
     # print(f"Recipient signed prekey public key: {recipient_signed_prekey_public.public_bytes(encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw)}")
