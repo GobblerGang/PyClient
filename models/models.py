@@ -17,41 +17,66 @@ class User(UserMixin, db.Model):
     uuid = db.Column(db.String(36), unique=True, nullable=False)  # UUID for user identification
     username = db.Column(db.String(80), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
-    identity_key_public = db.Column(db.String(255))  # Base64 encoded public key
+    # --- New identity key fields ---
+    ed25519_identity_key_public = db.Column(db.String(255))  # Base64 encoded Ed25519 public key
+    ed25519_identity_key_private_enc = db.Column(db.String(255))
+    ed25519_identity_key_private_nonce = db.Column(db.String(44))
+    x25519_identity_key_public = db.Column(db.String(255))  # Base64 encoded X25519 public key
+    x25519_identity_key_private_enc = db.Column(db.String(255))
+    x25519_identity_key_private_nonce = db.Column(db.String(44))
+    # # --- Deprecated: old single identity key fields ---
+    # identity_key_public = db.Column(db.String(255))  # Deprecated
+    # identity_key_private_enc = db.Column(db.String(255))  # Deprecated
+    # identity_key_private_nonce = db.Column(db.String(44))  # Deprecated
+    # Signed prekey fields
+    salt = db.Column(db.String(44), nullable=False)  # Base64 encoded salt for key derivation
     signed_prekey_public = db.Column(db.String(255))  # Base64 encoded public key
     signed_prekey_signature = db.Column(db.String(255))  # Base64 encoded signature
-    # Vault fields
-    salt = db.Column(db.String(44))  # Base64 encoded salt (16 bytes -> 24 chars, but 44 for future-proofing)
-    identity_key_private_enc = db.Column(db.String(255))
-    identity_key_private_nonce = db.Column(db.String(44))
     signed_prekey_private_enc = db.Column(db.String(255))
     signed_prekey_private_nonce = db.Column(db.String(44))
     # Add OPKs as a JSON string field
     opks_json = db.Column(db.Text)  # Store list of base64 public keys as JSON
     # Relationships
     
+    kek = db.relationship('KEK', uselist=False, back_populates='user')
     
-    def get_identity_private_key(self, master_key):
+    def get_ed25519_identity_private_key(self, kek):
         """
-        Decrypt and return the user's identity private key, caching it per-request using Flask's g.
+        Decrypt and return the user's Ed25519 identity private key, caching it per-request using Flask's g.
         """
-        if not hasattr(g, 'identity_private_key'):
-            nonce = base64.b64decode(self.identity_key_private_nonce)
-            enc = base64.b64decode(self.identity_key_private_enc)
-            decrypted_bytes = CryptoUtils.decrypt_with_key(nonce, enc, master_key, b'identity_key')
-            g.identity_private_key = decrypted_bytes
-        return g.identity_private_key
+        if not hasattr(g, 'ed25519_identity_private_key'):
+            nonce = base64.b64decode(self.ed25519_identity_key_private_nonce)
+            enc = base64.b64decode(self.ed25519_identity_key_private_enc)
+            decrypted_bytes = CryptoUtils.decrypt_with_key(nonce, enc, kek, b'ed25519_identity_key')
+            g.ed25519_identity_private_key = decrypted_bytes
+        return g.ed25519_identity_private_key
 
-#     files = db.relationship('File', backref='owner', lazy=True)
+    def get_x25519_identity_private_key(self, kek):
+        """
+        Decrypt and return the user's X25519 identity private key, caching it per-request using Flask's g.
+        """
+        if not hasattr(g, 'x25519_identity_private_key'):
+            nonce = base64.b64decode(self.x25519_identity_key_private_nonce)
+            enc = base64.b64decode(self.x25519_identity_key_private_enc)
+            decrypted_bytes = CryptoUtils.decrypt_with_key(nonce, enc, kek, b'x25519_identity_key')
+            g.x25519_identity_private_key = decrypted_bytes
+        return g.x25519_identity_private_key
+
+    # Optionally, keep the old method for backward compatibility, but mark as deprecated
+    def get_identity_private_key(self, kek):
+        """
+        Deprecated: Use get_ed25519_identity_private_key or get_x25519_identity_private_key instead.
+        """
+        return self.get_ed25519_identity_private_key(kek)
+
+class KEK(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    enc_kek = db.Column(db.String(255), nullable=False)
+    kek_nonce = db.Column(db.String(44), nullable=False)
+    updated_at = db.Column(db.String(255), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+
+    user = db.relationship('User', back_populates='kek')
     
-# class File(db.Model):
-#     id = db.Column(db.Integer, primary_key=True)
-#     uuid = db.Column(db.String(36), unique=True, nullable=False)  # UUID for file identification
-#     filename = db.Column(db.String(255), nullable=False)
-#     upload_date = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-#     mime_type = db.Column(db.String(127), nullable=True)
-#     file_nonce = db.Column(db.String(44))  # Nonce for file encryption
-#     k_file_encrypted = db.Column(db.String(255))  # Encrypted file key
-#     k_file_nonce = db.Column(db.String(44))  # Nonce for file key encryption
-    
-#     owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    def __repr__(self):
+        return f'<KEK {self.id} for User {self.user_id}>'

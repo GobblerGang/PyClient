@@ -14,7 +14,6 @@
                 <thead>
                     <tr>
                         <th>Filename</th>
-                        <th>Upload Date</th>
                         <th>Type</th>
                         <th>Shared With</th>
                         <th>Actions</th>
@@ -29,8 +28,7 @@
                     {% endif %}
                     {% for file in owned_files %}
                     <tr>
-                        <td>{{ file.original_filename }}</td>
-                        <td>{{ file.upload_date.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                        <td>{{ file.filename }}</td>
                         <td>{{ file.mime_type }}</td>
                         <td>
                             {% if file.shared_with %}
@@ -68,7 +66,6 @@
                     <tr>
                         <th>Filename</th>
                         <th>Owner</th>
-                        <th>Share Date</th>
                         <th>Type</th>
                         <th>Actions</th>
                     </tr>
@@ -81,9 +78,8 @@
                     {% endif %}
                     {% for file in shared_files %}
                     <tr>
-                        <td>{{ file.original_filename }}</td>
-                        <td>{{ file.owner_name }}</td>
-                        <td>{{ file.upload_date.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                        <td>{{ file.filename }}</td>
+                        <td>{{ file.issuer_username }}</td>
                         <td>{{ file.mime_type }}</td>
                         <td>
                             <a href="{{ url_for('file.download_file', file_uuid=file.file_uuid) }}" class="btn btn-sm btn-success">Download</a>

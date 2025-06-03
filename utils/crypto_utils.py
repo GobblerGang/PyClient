@@ -25,11 +25,11 @@ class CryptoUtils:
         )
         
     @staticmethod
-    def encrypt_with_key(file_data: bytes, key: bytes, associated_data:bytes=None) -> Tuple[bytes, bytes]:
+    def encrypt_with_key(plaintext: bytes, key: bytes, associated_data:bytes=None) -> Tuple[bytes, bytes]:
         """Encrypt file data using AES-GCM."""
         aesgcm = AESGCM(key)
         nonce = token_bytes(12)  
-        ciphertext = aesgcm.encrypt(nonce, file_data, associated_data)
+        ciphertext = aesgcm.encrypt(nonce, plaintext, associated_data)
         return nonce, ciphertext
 
     @staticmethod
@@ -95,26 +95,53 @@ class CryptoUtils:
         recipient_one_time_prekey_public: x25519.X25519PublicKey = None,
     ) -> bytes:
         """Perform correct 3XDH key exchange as used in Signal."""
+        print("[3XDH SENDER]")
+        print("identity_private:", base64.b64encode(identity_private.private_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PrivateFormat.Raw,
+            encryption_algorithm=serialization.NoEncryption()
+        )))
+        print("identity_private public:", base64.b64encode(identity_private.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw
+        )))
+        print("ephemeral_private:", base64.b64encode(ephemeral_private.private_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PrivateFormat.Raw,
+            encryption_algorithm=serialization.NoEncryption()
+        )))
+        print("ephemeral_private public:", base64.b64encode(ephemeral_private.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw
+        )))
+        print("recipient_identity_public:", base64.b64encode(recipient_identity_public.public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw
+        )))
+        print("recipient_signed_prekey_public:", base64.b64encode(recipient_signed_prekey_public.public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw
+        )))
+        if recipient_one_time_prekey_public:
+            print("recipient_one_time_prekey_public:", base64.b64encode(recipient_one_time_prekey_public.public_bytes(
+                encoding=serialization.Encoding.Raw,
+                format=serialization.PublicFormat.Raw
+            )))
         shared1 = ephemeral_private.exchange(recipient_identity_public)
-
         shared2 = identity_private.exchange(recipient_signed_prekey_public)
-
         shared3 = ephemeral_private.exchange(recipient_signed_prekey_public)
-
         shared_secret = shared1 + shared2 + shared3
         if recipient_one_time_prekey_public:
             shared4 = ephemeral_private.exchange(recipient_one_time_prekey_public)
             shared_secret += shared4
-
         derived_key = HKDF(
             algorithm=hashes.SHA256(),
             length=32,
             salt=None,
             info=b'3XDH key agreement'
         ).derive(shared_secret)
-
         return derived_key
-    
+
     @staticmethod
     def perform_3xdh_recipient(
         identity_private: x25519.X25519PrivateKey,          
@@ -124,24 +151,56 @@ class CryptoUtils:
         one_time_prekey_private: x25519.X25519PrivateKey = None    
         ) -> bytes:
         """Perform 3XDH from the receiver's side."""
+        print("[3XDH RECIPIENT]")
+        print("identity_private:", base64.b64encode(identity_private.private_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PrivateFormat.Raw,
+            encryption_algorithm=serialization.NoEncryption()
+        )))
+        print("identity_private public:", base64.b64encode(identity_private.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw
+        )))
+        print("signed_prekey_private:", base64.b64encode(signed_prekey_private.private_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PrivateFormat.Raw,
+            encryption_algorithm=serialization.NoEncryption()
+        )))
+        print("signed_prekey_private public:", base64.b64encode(signed_prekey_private.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw
+        )))
+        print("sender_identity_public:", base64.b64encode(sender_identity_public.public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw
+        )))
+        print("sender_ephemeral_public:", base64.b64encode(sender_ephemeral_public.public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw
+        )))
+        if one_time_prekey_private:
+            print("one_time_prekey_private:", base64.b64encode(one_time_prekey_private.private_bytes(
+                encoding=serialization.Encoding.Raw,
+                format=serialization.PrivateFormat.Raw,
+                encryption_algorithm=serialization.NoEncryption()
+            )))
+            print("one_time_prekey_private public:", base64.b64encode(one_time_prekey_private.public_key().public_bytes(
+                encoding=serialization.Encoding.Raw,
+                format=serialization.PublicFormat.Raw
+            )))
         shared1 = identity_private.exchange(sender_ephemeral_public)
-
         shared2 = signed_prekey_private.exchange(sender_identity_public)
-
         shared3 = signed_prekey_private.exchange(sender_ephemeral_public)
-
         shared_secret = shared1 + shared2 + shared3
         if one_time_prekey_private:  
             shared4 = one_time_prekey_private.exchange(sender_ephemeral_public)
             shared_secret += shared4
-
         derived_key = HKDF(
             algorithm=hashes.SHA256(),
             length=32,
             salt=None,
             info=b'3XDH key agreement'
         ).derive(shared_secret)
-
         return derived_key
 
     @staticmethod
@@ -155,7 +214,8 @@ class CryptoUtils:
         valid_until: int,
         identity_key: ed25519.Ed25519PrivateKey,
         filename: str,
-        mime_type: str
+        mime_type: str,
+        issuer_username: str
     ) -> PAC:
         """Create a Privilege Attribute Certificate (PAC) and return as PAC object."""
         pac_dict = {
@@ -172,6 +232,7 @@ class CryptoUtils:
         }
         # Create signature
         message = json.dumps(pac_dict, sort_keys=True).encode()
+        # print(f"PAC creation message: {message}")
         signature = identity_key.sign(message)
         pac_dict["signature"] = base64.b64encode(signature).decode()
         # Return as PAC object
@@ -185,17 +246,35 @@ class CryptoUtils:
             sender_ephemeral_public=pac_dict["sender_ephemeral_pubkey"],
             k_file_nonce=pac_dict["encrypted_file_key_nonce"],
             filename=filename,
-            mime_type=mime_type
+            mime_type=mime_type,
+            issuer_username=issuer_username
         )
 
     @staticmethod
+    def canonicalize_pac_dict(pac: dict) -> dict:
+        """Map server PAC dict keys to canonical keys for signature verification."""
+        return {
+            "file_id": pac.get("file_id") or pac.get("file_uuid"),
+            "recipient_id": pac.get("recipient_id") or pac.get("recipient_uuid"),
+            "issuer_id": pac.get("issuer_id") or pac.get("issuer_uuid"),
+            "encrypted_file_key": pac.get("encrypted_file_key"),
+            "encrypted_file_key_nonce": pac.get("encrypted_file_key_nonce") or pac.get("k_file_nonce"),
+            "sender_ephemeral_pubkey": pac.get("sender_ephemeral_pubkey") or pac.get("sender_ephemeral_public_key"),
+            "valid_until": pac.get("valid_until"),
+            "revoked": pac.get("revoked", False),
+            "filename": pac.get("filename") or pac.get("file_name"),
+            "mime_type": pac.get("mime_type"),
+        }
+
+    @staticmethod
     def verify_pac(pac: dict, issuer_public_key: ed25519.Ed25519PublicKey) -> bool:
-        """Verify a PAC's signature, including metadata."""
+        """Verify a PAC's signature using only the canonical PAC fields."""
         try:
             signature = base64.b64decode(pac["signature"])
-            pac_copy = pac.copy()
-            del pac_copy["signature"]
+            pac_copy = CryptoUtils.canonicalize_pac_dict(pac)
             message = json.dumps(pac_copy, sort_keys=True).encode()
+            # print(f"PAC verification signature: {signature}")
+            # print(f"PAC verification message:{message}")
             issuer_public_key.verify(signature, message)
             return True
         except Exception:
