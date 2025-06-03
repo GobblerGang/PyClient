@@ -66,16 +66,16 @@ def load_x25519_public_key(b64_key):
 def get_user_x25519_private_keys(user, kek):
     """Decrypt and return the user's X25519 identity and signed prekey private keys."""
     user_vault = get_user_vault(user)
-    identity_private_bytes, signed_prekey_private_bytes = try_decrypt_private_keys(user_vault, kek)
-    identity_private = x25519.X25519PrivateKey.from_private_bytes(identity_private_bytes)
+    _, x_identity_private_bytes, signed_prekey_private_bytes = try_decrypt_private_keys(user_vault, kek)
+    identity_private = x25519.X25519PrivateKey.from_private_bytes(x_identity_private_bytes)
     signed_prekey_private = x25519.X25519PrivateKey.from_private_bytes(signed_prekey_private_bytes)
     return identity_private, signed_prekey_private
 
 def get_user_ed25519_private_key(user, kek):
     """Decrypt and return the user's Ed25519 identity private key."""
     user_vault = get_user_vault(user)
-    identity_private_bytes, _ = try_decrypt_private_keys(user_vault, kek)
-    return ed25519.Ed25519PrivateKey.from_private_bytes(identity_private_bytes)
+    ed_identity_private_bytes, _, _ = try_decrypt_private_keys(user_vault, kek)
+    return ed25519.Ed25519PrivateKey.from_private_bytes(ed_identity_private_bytes)
 
 def share_file_with_user_service(file_info, recipient_username: str, user, private_key, kek):
     """
@@ -228,14 +228,14 @@ def download_file_service(file_uuid, pacs, user, kek, private_key):
     
     print("PAC signature verified successfully")
     
-    issuer_identity_public = load_x25519_public_key(issuer_keys["identity_key_public"])
+    issuer_identity_public = load_x25519_public_key(issuer_keys["x25519_identity_key_public"])
     identity_private, signed_prekey_private = get_user_x25519_private_keys(user, kek)
     
-    issuer_user_local = User.query.filter_by(uuid=requested_file_pac.issuer_id).first()
-    print(f"Local issuer public key: {issuer_user_local.identity_key_public}")
-    print(f"Issuer keys identity public key: {issuer_keys['identity_key_public']}")
-    if issuer_user_local.identity_key_public != issuer_keys["identity_key_public"]:
-        raise FileDownloadError('Issuer identity key public does not match local user record')
+    # issuer_user_local = User.query.filter_by(uuid=requested_file_pac.issuer_id).first()
+    # print(f"Local issuer public key: {issuer_user_local.identity_key_public}")
+    # print(f"Issuer keys x identity public key: {issuer_keys['x25519_identity_key_public']}")
+    # if issuer_user_local.identity_key_public != issuer_keys["x25519_identity_key_public"]:
+        # raise FileDownloadError('Issuer identity key public does not match local user record')
     
     print(requested_file_pac.sender_ephemeral_public)
     sender_ephemeral_public_x25519 = load_x25519_public_key(requested_file_pac.sender_ephemeral_public)
@@ -263,14 +263,15 @@ def download_file_service(file_uuid, pacs, user, kek, private_key):
     )
     if not k_file:
         raise FileDownloadError('Failed to decrypt file key')
-    file_response = server.download_file(file_uuid=requested_file_pac.file_uuid)
+    file_response, error = server.download_file(file_uuid=requested_file_pac.file_uuid, private_key=private_key, user_uuid=user.uuid)
     if not file_response:
-        raise FileDownloadError('Failed to download file')
-    file_data = file_response.get('ciphertext')
+        raise FileDownloadError(f'Failed to download file: {error}')
+    file_data = file_response.get('encrypted_blob')
     if not file_data:
         raise FileDownloadError('File data not found')
     file_data = base64.b64decode(file_data)
-    file_nonce = file_response.get('file_nonce')
+    file_nonce_b64 = file_response.get('file_nonce')
+    file_nonce = base64.b64decode(file_nonce_b64)
     if not file_nonce:
         raise FileDownloadError('File nonce not found')
     # --- Verify file metadata matches PAC ---

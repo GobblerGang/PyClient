@@ -239,26 +239,36 @@ def send_pac(pac: PAC, sender_uuid: str, private_key: Ed25519PrivateKey):
     data, error = parse_server_response(response)
     return data, error
 
-def download_file(file_uuid: str):
+def download_file(file_uuid: str, private_key: Ed25519PrivateKey, user_uuid: str):
     """
     Retrieve an encrypted file by its UUID from the server.
+
+    Parameters:
+    - file_uuid (str): The UUID of the file to be downloaded.
+    - private_key (Ed25519PrivateKey): The private key used to sign the request headers.
+    - user_uuid (str): The UUID of the user making the request.
+
     Expected JSON response structure:
     {
-        "file_uuid": str,  # UUID
-        "ciphertext": base64 encoded bytes,
+        "encrypted_blob": base64 encoded bytes,
         "filename": str,
         "file_nonce": str,
         "mime_type": str,
     }
     """
-    try:
-        server_url = f"{SERVER_URL}/api/files/{file_uuid}"
-        response = requests.get(server_url)
-        response.raise_for_status()
-        return response.json()  # Expecting JSON, not raw content
-    except Exception as e:
-        print(f"Error retrieving file {file_uuid}: {e}")
-        return None
+    headers = set_headers(private_key=private_key, user_uuid=user_uuid, payload=b"")
+    server_url = f"{SERVER_URL}/api/files/download/{file_uuid}"
+    response = requests.get(url=server_url, headers=headers)
+    response.raise_for_status()
+    data, error = parse_server_response(response)
+    if error:
+        print(f"Error downloading file {file_uuid}: {error}")
+        return None, error
+    return data, None
+    # response.json()  # Expecting JSON, not raw content
+    # except Exception as e:
+    #     print(f"Error retrieving file {file_uuid}: {e}")
+    #     return None
     
 def get_owned_files(user_id: str, private_key: Ed25519PrivateKey):
     """

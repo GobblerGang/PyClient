@@ -29,6 +29,7 @@ class User(UserMixin, db.Model):
     # identity_key_private_enc = db.Column(db.String(255))  # Deprecated
     # identity_key_private_nonce = db.Column(db.String(44))  # Deprecated
     # Signed prekey fields
+    salt = db.Column(db.String(44), nullable=False)  # Base64 encoded salt for key derivation
     signed_prekey_public = db.Column(db.String(255))  # Base64 encoded public key
     signed_prekey_signature = db.Column(db.String(255))  # Base64 encoded signature
     signed_prekey_private_enc = db.Column(db.String(255))
