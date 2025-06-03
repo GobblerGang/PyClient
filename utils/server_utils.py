@@ -16,8 +16,7 @@ def parse_server_response(response):
         print(f"Server response code: {response.status_code}")
         response.raise_for_status()  # Raise an error for bad status codes
     except Exception as e:
-        data = {}
-        return None, f"Error parsing server response: {e}"
+        return None, f"Error parsing server response: {data.get('error', str(e))}"
     # Only return error if 'error' is present in the response data
     if 'error' in data:
         return None, data['error']
@@ -308,4 +307,53 @@ def get_file_info(file_uuid: str, user_uuid: str, private_key: Ed25519PrivateKey
     headers = set_headers(private_key, user_uuid, b"")
     response = requests.get(server_url, headers=headers)
     data, error = parse_server_response(response)
+    return data, error
+
+def revoke_file_access(
+    file_uuid: str,
+    file_ciphertext: bytes,
+    file_nonce: bytes,
+    enc_file_k: bytes,
+    k_file_nonce: bytes,
+    pacs: list,
+    owner_uuid: str,
+    private_key: Ed25519PrivateKey,
+    filename: str,
+    mime_type: str
+):
+    """
+    Update a file's record and PACs after revoking access for one or more users.
+
+    Args:
+        file_uuid (str): The UUID of the file being updated.
+        file_ciphertext (bytes): The new encrypted file data.
+        file_nonce (bytes): The nonce used for file encryption.
+        enc_file_k (bytes): The new encrypted file key (encrypted with owner's KEK).
+        k_file_nonce (bytes): The nonce used for encrypting the file key.
+        pacs (list): List of updated PACs (as dicts) for users who should retain access.
+        owner_uuid (str): The UUID of the file owner.
+        private_key: The owner's Ed25519 private key for authentication.
+        filename (str): The file's name.
+        mime_type (str): The file's MIME type.
+
+    Returns:
+        tuple: (response_data, error) from the server.
+    """
+    payload = {
+        "file_uuid": file_uuid,
+        "file_ciphertext": base64.b64encode(file_ciphertext).decode(),
+        "file_nonce": base64.b64encode(file_nonce).decode(),
+        "enc_file_k": base64.b64encode(enc_file_k).decode(),
+        "k_file_nonce": base64.b64encode(k_file_nonce).decode(),
+        "pacs": [pac for pac in pacs],  # Convert PAC objects to dicts
+        "filename": filename,
+        "mime_type": mime_type
+    }
+    # print(f"Revoke access payload: {json.dumps(payload, indent=2)}")
+    server_url = f"{SERVER_URL}/api/files/revoke-access"
+    
+    headers = set_headers(private_key, owner_uuid, payload)
+    response = requests.put(server_url, headers=headers, json=payload)
+    data, error = parse_server_response(response)
+    # print(f"Revoke access response: {data}, error: {error}")
     return data, error

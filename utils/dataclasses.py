@@ -50,7 +50,7 @@ class Vault:
         }
 
 class PAC:
-    def __init__(self, recipient_id, file_uuid, valid_until, encrypted_file_key, signature, issuer_id, sender_ephemeral_public, k_file_nonce, filename, mime_type, issuer_username):
+    def __init__(self, recipient_id, file_uuid, valid_until, encrypted_file_key, signature, issuer_id, sender_ephemeral_public, k_file_nonce, filename, mime_type, issuer_username, recipient_username=None):
         self.recipient_id = recipient_id
         self.file_uuid = str(file_uuid)  # Always treat as string UUID
         self.valid_until = valid_until
@@ -62,6 +62,7 @@ class PAC:
         self.filename = filename
         self.mime_type = mime_type
         self.issuer_username = issuer_username 
+        self.recipient_username = recipient_username
 
     @classmethod
     def from_json(cls, data):
@@ -76,7 +77,8 @@ class PAC:
         k_file_nonce=data.get('k_file_nonce') or data.get('nonce') or data.get('encrypted_file_key_nonce'),
         filename=data.get('file_name') or data.get('filename'),
         mime_type=data.get('mime_type'),
-        issuer_username=data.get('issuer_username')
+        issuer_username=data.get('issuer_username'),
+        recipient_username=data.get('recipient_username', '')
     )
 
     def to_dict(self):
@@ -91,11 +93,27 @@ class PAC:
             'k_file_nonce': self.k_file_nonce,
             'filename': self.filename,
             'mime_type': self.mime_type,
-            'issuer_username': self.issuer_username
+            'issuer_username': self.issuer_username,
+            'recipient_username': self.recipient_username
+        }
+        
+    def to_server_dict(self):
+        return {
+            "file_id": self.file_uuid,
+            "recipient_id": self.recipient_id,
+            "issuer_id": self.issuer_id,
+            "encrypted_file_key": self.encrypted_file_key,
+            "encrypted_file_key_nonce": self.k_file_nonce,
+            "sender_ephemeral_pubkey": self.sender_ephemeral_public,
+            "identity_key": self.signature,
+            "filename": self.filename,
+            "mime_type": self.mime_type,
+            "issuer_username": self.issuer_username,
+            "valid_until": self.valid_until,
         }
         
 class FileInfo:
-    def __init__(self, file_uuid, name, file_nonce, k_file_encrypted, k_file_nonce, owner_uuid, mime_type=None, filename=None):
+    def __init__(self, file_uuid, name, file_nonce, k_file_encrypted, k_file_nonce, owner_uuid, mime_type=None, filename=None, associated_pacs: Optional[List[PAC]] = None):
         self.file_uuid = str(file_uuid)  # Always treat as string UUID
         self.name = name
         self.file_nonce = file_nonce
@@ -104,6 +122,7 @@ class FileInfo:
         self.owner_uuid = owner_uuid
         self.mime_type = mime_type
         self.filename = filename or name
+        self.associated_pacs: List[PAC] = associated_pacs or []
 
     @classmethod
     def from_dict(cls, data):
@@ -115,7 +134,8 @@ class FileInfo:
             k_file_nonce=data.get('k_file_nonce'),
             owner_uuid=data.get('owner_uuid') or data.get('owner_name'),
             mime_type=data.get('mime_type'),
-            filename=data.get('filename')
+            filename=data.get('filename'),
+            associated_pacs=[PAC.from_json(pac) for pac in data.get('associated_pacs', [])]
         )
 
     def to_dict(self):
@@ -127,6 +147,7 @@ class FileInfo:
             'k_file_nonce': self.k_file_nonce,
             'owner_uuid': self.owner_uuid,
             'mime_type': self.mime_type,
-            'filename': self.filename
+            'filename': self.filename,
+            'associated_pacs': [pac.to_dict() for pac in self.associated_pacs]
         }
 
