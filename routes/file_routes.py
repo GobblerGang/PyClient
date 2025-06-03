@@ -78,14 +78,36 @@ def share_file(file_uuid):
 @login_required
 def revoke_access(file_uuid, user_uuid):
     master_key = MasterKey().get()
-    _, issued_pacs = refresh_pacs_service(current_user, current_user.get_identity_private_key(master_key))
-    file = next((f for f in issued_pacs if f.file_uuid == file_uuid), None)
-    
+    # Get the file info, which includes associated_pacs
+    kek = get_decrypted_kek(current_user, master_key)
+    file = get_file_info_service(file_uuid=file_uuid, user=current_user, master_key=master_key)
+    _, issued_pacs = refresh_pacs_service(current_user, ed25519.Ed25519PrivateKey.from_private_bytes(current_user.get_identity_private_key(kek)))
+    associated_pacs = [pac for pac in issued_pacs if pac.file_uuid == file_uuid]
+    if not file:
+        flash('File not found')
+        return redirect(url_for('file.list_files'))
     if file.owner_uuid != current_user.uuid:
         flash('You do not have permission to revoke access')
         return redirect(url_for('file.list_files'))
+
+    # Filter PACs to keep only those not matching the revoked user
+    pacs_to_keep = [pac for pac in associated_pacs if pac.recipient_id != user_uuid]
+    # For each PAC, get the recipient user dict from the server
+    users_to_keep = []
+    for pac in pacs_to_keep:
+        user_dict = {
+            "username": pac.recipient_username,
+            "uuid": pac.recipient_id
+        }
+        users_to_keep.append(user_dict)
+        
     try:
-        revoke_file_access(file, user_uuid)
+        rotate_file_key_and_update_pacs(
+        file_uuid=file_uuid,
+        owner_user=current_user,
+        master_key=master_key,
+        users_to_keep=users_to_keep
+    )
         flash('Access revoked successfully')
     except Exception as e:
         flash(f'Error revoking access: {str(e)}')
