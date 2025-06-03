@@ -120,20 +120,9 @@ def share_file_with_user_service(file_info, recipient_username: str, user, priva
     # Use X25519 for key exchange
     recipient_identity_public = load_x25519_public_key(recipient_keys["x25519_identity_key_public"])
     recipient_signed_prekey_public = load_x25519_public_key(recipient_keys["signed_prekey_public"])
-    # TODO remove this check in production
-    recipient_user_local = User.query.filter_by(uuid=recipient_user['uuid']).first()
-    print("Local recipient X25519 public key:", recipient_user_local.x25519_identity_key_public)
-    print("Recipient keys x25519_identity_key_public:", recipient_keys["x25519_identity_key_public"])
-    if recipient_user_local.x25519_identity_key_public != recipient_keys["x25519_identity_key_public"]:
-        raise ValueError("Recipient X25519 identity key public does not match local user record")
-    
-    # print(f"Recipient identity public key: {recipient_identity_public.public_bytes(encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw)}")
-    # print(f"Recipient signed prekey public key: {recipient_signed_prekey_public.public_bytes(encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw)}")
-
     
     ik_priv_bytes = user.get_x25519_identity_private_key(kek=kek)
     sender_ik_priv_x25519 = x25519.X25519PrivateKey.from_private_bytes(ik_priv_bytes)
-    print(f"\n=======\nSender X25519 identity public key: {sender_ik_priv_x25519.public_key().public_bytes(encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw)}\n=======\n")
     if not isinstance(sender_ik_priv_x25519, x25519.X25519PrivateKey):
         raise ValueError("Sender identity private key is not of type X25519PrivateKey")
     shared_key = CryptoUtils.perform_3xdh_sender(
@@ -142,9 +131,6 @@ def share_file_with_user_service(file_info, recipient_username: str, user, priva
         recipient_identity_public=recipient_identity_public,
         recipient_signed_prekey_public=recipient_signed_prekey_public,
     )
-    # print(f"Shared key derived: {base64.b64encode(shared_key).decode()}")
-    print(f"3XDH sender performed")
-    print(f"Shared key: {base64.b64encode(shared_key).decode()}")
     
     enc_k_file_nonce, enc_k_file = CryptoUtils.encrypt_with_key(k_file, shared_key)
     
