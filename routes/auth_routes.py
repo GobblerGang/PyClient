@@ -20,6 +20,7 @@ from services.auth_service import create_user_service, import_user_keys_service,
 from utils.dataclasses import Vault
 from services.kek_service import encrypt_kek
 from cryptography.exceptions import InvalidTag
+from utils.password_utils import PasswordValidator
 
 bp_auth = Blueprint('auth', __name__)
 
@@ -57,10 +58,17 @@ def signup():
             flash('Email already registered')
             return redirect(url_for('auth.signup'))
         
-        # Take password input
+        # Take password input and validate
         password = request.form.get('password')
         if not password:
             flash('Password is required')
+            return redirect(url_for('auth.signup'))
+        
+        # Validate password using NIST guidelines
+        password_validator = PasswordValidator()
+        is_valid, error_message = password_validator.validate_password(password)
+        if not is_valid:
+            flash(error_message)
             return redirect(url_for('auth.signup'))
         
         salt = os.urandom(16)
@@ -140,6 +148,14 @@ def change_password():
     if request.method == 'POST':
         old_password = request.form.get('old_password')
         new_password = request.form.get('new_password')
+        
+        # Validate new password using NIST guidelines
+        password_validator = PasswordValidator()
+        is_valid, error_message = password_validator.validate_password(new_password)
+        if not is_valid:
+            flash(error_message)
+            return render_template('change_password.html')
+        
         user = User.query.get(current_user.id)
         success, error = change_password_service(user, old_password, new_password)
         if not success:
