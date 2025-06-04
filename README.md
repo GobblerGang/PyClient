@@ -23,12 +23,31 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-3. Run the application:
+3. Create a `.env` file in the project root with the following variables:
+```bash
+FLASK_ENV=development  # or 'production' for production environment
+DATABASE_URI=sqlite:///users.db  # For development
+UPLOAD_FOLDER=uploads
+MAX_CONTENT_LENGTH=16777216  # 16MB in bytes
+```
+
+4. Run the application:
 ```bash
 python app.py
 ```
 
-4. Open your browser and navigate to `http://localhost:5000`
+5. Open your browser and navigate to `http://localhost:5000`
+
+## Environment Variables
+
+The following environment variables can be configured in your `.env` file:
+
+- `FLASK_ENV`: Set to 'development' or 'production'
+- `DATABASE_URI`: Database connection string (default: sqlite:///users.db)
+- `UPLOAD_FOLDER`: Directory for file uploads (default: uploads)
+- `MAX_CONTENT_LENGTH`: Maximum file upload size in bytes (default: 16MB)
+
+Note: The `SECRET_KEY` is automatically generated using `os.urandom(24)` for security.
 
 ## Project Structure
 
