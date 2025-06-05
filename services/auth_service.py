@@ -168,6 +168,12 @@ def login_user_service(username: str, password: str):
     if kek_error:
         MasterKey().clear()
         return None, 'Failed to log in. Wrong password or tampered KEK data.'
+    # Update local KEK if server's updated_at is newer
+    if hasattr(user, 'kek') and user.kek and server_updated_at and user.kek.updated_at != server_updated_at:
+        user.kek.enc_kek = kek_info.get('enc_kek_cyphertext')
+        user.kek.kek_nonce = kek_info.get('nonce')
+        user.kek.updated_at = server_updated_at
+        db.session.commit()
     return user, None
 
 
