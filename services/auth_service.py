@@ -165,10 +165,7 @@ def login_user_service(username: str, password: str):
         kek, kek_error = decrypt_kek_with_error_handling(kek_info, user.uuid, password, salt)
         if kek_error:
             # Do NOT update local KEK, notify user of possible tampering
-            return None, (
-                "Failed to decrypt KEK with the provided password. "
-                "Possible tampering detected or wrong password. Please contact support if this was not expected."
-            )
+            return None, freshness_error
         # If decryption succeeds, update local KEK and allow login
         if hasattr(user, 'kek') and user.kek and server_updated_at and user.kek.updated_at != server_updated_at:
             user.kek.enc_kek = kek_info.get('enc_kek_cyphertext')
