@@ -160,6 +160,13 @@ def keypairs_from_opk_bytes(decrypted_opks):
         opk_keypairs.append((opk_private, opk_public))
     return opk_keypairs
 
+def verify_spk_signature(ed25519_pub_bytes, spk_pub_bytes, spk_signature_bytes):
+    ed25519_pub = ed25519.Ed25519PublicKey.from_public_bytes(ed25519_pub_bytes)
+    try:
+        ed25519_pub.verify(spk_signature_bytes, spk_pub_bytes)
+        return True
+    except Exception:
+        return False
 # def encrypt_and_store_kek(kek: bytes, master_key: bytes) -> KEK:
 #     """Encrypt the KEK with the master key."""
 #     nonce, ciphertext = CryptoUtils.encrypt_with_key(kek, master_key, b'kek')

@@ -6,7 +6,7 @@ from werkzeug.utils import secure_filename
 from extensions.extensions import db
 from models.models import KEK, User
 from utils.crypto_utils import CryptoUtils
-from utils.key_utils import get_user_vault, try_decrypt_private_keys
+from utils.key_utils import get_user_vault, try_decrypt_private_keys, verify_spk_signature
 import utils.server_utils as server
 from utils.dataclasses import PAC, FileInfo
 from cryptography.hazmat.primitives.asymmetric import ed25519, x25519
@@ -95,6 +95,8 @@ def share_file_with_user_service(file_info, recipient_username: str, user, priva
     if error:
         raise ValueError(f"User not found: {error}")
 
+    
+    
     k_file = CryptoUtils.decrypt_with_key(
         nonce=base64.b64decode(file_info.k_file_nonce),
         ciphertext=base64.b64decode(file_info.k_file_encrypted),
@@ -165,29 +167,27 @@ def download_file_service(file_uuid, pacs, user, kek, private_key):
     if not requested_file_pac:
         raise FileDownloadError('File not found or access denied')
     
-    # ik_priv_bytes = User.get_identity_private_key(self=user, kek=kek)
-    # ik_priv_x25519 = x25519.X25519PrivateKey.from_private_bytes(ik_priv_bytes)
-    
     issuer_keys, error = server.get_user_keys(sender_user_uuid=user.uuid, recipient_uuid=requested_file_pac.issuer_id, private_key=private_key)
-    
     if not issuer_keys:
         raise FileDownloadError('Owner keys not found')
+    
+    
+    # Verify issuer's signed prekey signature
+    issuer_ed25519_pub_bytes = base64.b64decode(issuer_keys["ed25519_identity_key_public"])
+    issuer_spk_pub_bytes = base64.b64decode(issuer_keys["signed_prekey_public"])
+    issuer_spk_signature_bytes = base64.b64decode(issuer_keys["signed_prekey_signature"])
+    if not verify_spk_signature(issuer_ed25519_pub_bytes, issuer_spk_pub_bytes, issuer_spk_signature_bytes):
+        raise FileDownloadError('Issuer signed prekey signature verification failed')
     
     # Verify PAC signature before proceeding
     issuer_ed25519_pub = ed25519.Ed25519PublicKey.from_public_bytes(base64.b64decode(issuer_keys["ed25519_identity_key_public"]))
     if not CryptoUtils.verify_pac(requested_file_pac.to_dict(), issuer_ed25519_pub):
         raise FileDownloadError('PAC signature verification failed')
-    
     print("PAC signature verified successfully")
     
     issuer_identity_public = load_x25519_public_key(issuer_keys["x25519_identity_key_public"])
     identity_private, signed_prekey_private = get_user_x25519_private_keys(user, kek)
     
-    # issuer_user_local = User.query.filter_by(uuid=requested_file_pac.issuer_id).first()
-    # print(f"Local issuer public key: {issuer_user_local.identity_key_public}")
-    # print(f"Issuer keys x identity public key: {issuer_keys['x25519_identity_key_public']}")
-    # if issuer_user_local.identity_key_public != issuer_keys["x25519_identity_key_public"]:
-        # raise FileDownloadError('Issuer identity key public does not match local user record')
     
     print(requested_file_pac.sender_ephemeral_public)
     sender_ephemeral_public_x25519 = load_x25519_public_key(requested_file_pac.sender_ephemeral_public)
@@ -208,24 +208,7 @@ def download_file_service(file_uuid, pacs, user, kek, private_key):
     print(f"Requested file PAC: {requested_file_pac.to_dict()}")
     print(f"K_file_nonce: {requested_file_pac.k_file_nonce}")
     print(f"Encrypted file key: {requested_file_pac.encrypted_file_key}")
-    # k_file = CryptoUtils.decrypt_with_key(
-    #     nonce=base64.b64decode(requested_file_pac.k_file_nonce),
-    #     ciphertext=base64.b64decode(requested_file_pac.encrypted_file_key),
-    #     key=shared_key
-    # )
-    # if not k_file:
-    #     raise FileDownloadError('Failed to decrypt file key')
-    # file_response, error = server.download_file(file_uuid=requested_file_pac.file_uuid, private_key=private_key, user_uuid=user.uuid)
-    # if not file_response:
-    #     raise FileDownloadError(f'Failed to download file: {error}')
-    # file_data = file_response.get('encrypted_blob')
-    # if not file_data:
-    #     raise FileDownloadError('File data not found')
-    # file_data = base64.b64decode(file_data)
-    # file_nonce_b64 = file_response.get('file_nonce')
-    # file_nonce = base64.b64decode(file_nonce_b64)
-    # if not file_nonce:
-    #     raise FileDownloadError('File nonce not found')
+   
     file_data, file_nonce, filename, mime_type, k_file = decrypt_k_file_and_get_file_data(
         k_file_nonce= requested_file_pac.k_file_nonce,
         enc_file_key=requested_file_pac.encrypted_file_key,
@@ -369,6 +352,13 @@ def create_pac_for_user(
     )
     if not recipient_keys or error:
         raise ValueError(f"Could not get keys for user {recipient_username or recipient_uuid}: {error}")
+    # Verify recipient's signed prekey signature
+    
+    recipient_ed25519_pub_bytes = base64.b64decode(recipient_keys["ed25519_identity_key_public"])
+    recipient_spk_pub_bytes = base64.b64decode(recipient_keys["signed_prekey_public"])
+    recipient_spk_signature_bytes = base64.b64decode(recipient_keys["signed_prekey_signature"])
+    if not verify_spk_signature(recipient_ed25519_pub_bytes, recipient_spk_pub_bytes, recipient_spk_signature_bytes):
+        raise ValueError(f"Recipient signed prekey signature verification failed for user {recipient_username or recipient_uuid}")
     recipient_identity_public = load_x25519_public_key(recipient_keys["x25519_identity_key_public"])
     recipient_signed_prekey_public = load_x25519_public_key(recipient_keys["signed_prekey_public"])
     ik_priv_bytes = issuer_user.get_x25519_identity_private_key(kek=kek)
