@@ -162,18 +162,24 @@ def login_user_service(username: str, password: str):
     # Check KEK freshness before proceeding
     is_fresh, freshness_error = check_kek_freshness(user)
     if not is_fresh:
-        MasterKey().clear()
+        kek, kek_error = decrypt_kek_with_error_handling(kek_info, user.uuid, password, salt)
+        if kek_error:
+            # Do NOT update local KEK, notify user of possible tampering
+            return None, (
+                "Failed to decrypt KEK with the provided password. "
+                "Possible tampering detected or wrong password. Please contact support if this was not expected."
+            )
+        # If decryption succeeds, update local KEK and allow login
         if hasattr(user, 'kek') and user.kek and server_updated_at and user.kek.updated_at != server_updated_at:
             user.kek.enc_kek = kek_info.get('enc_kek_cyphertext')
             user.kek.kek_nonce = kek_info.get('nonce')
             user.kek.updated_at = server_updated_at
             db.session.commit()
-        return None, freshness_error
+        return user, None
     kek, kek_error = decrypt_kek_with_error_handling(kek_info, user.uuid, password, salt)
     if kek_error:
         MasterKey().clear()
         return None, 'Failed to log in. Wrong password or tampered KEK data.'
-    # Update local KEK if server's updated_at is newer
     
     return user, None
 
