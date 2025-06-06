@@ -1,7 +1,7 @@
 from flask import Flask
 import os
 from extensions.extensions import db, login_manager
-from flask_wtf.csrf import CSRFProtect
+from flask_wtf.csrf import CSRFProtect, generate_csrf
 from dotenv import load_dotenv
 # from models.models import User, File
 # from routes.auth_routes import bp_auth
@@ -37,4 +37,8 @@ if __name__ == '__main__':
         db.create_all()
     # Only enable debug mode in development
     debug_mode = os.environ.get('FLASK_ENV') == 'development'
-    app.run(debug=debug_mode)
+    app.run(debug=True)
+    
+@app.context_processor
+def inject_csrf_token():
+    return dict(csrf_token=generate_csrf)

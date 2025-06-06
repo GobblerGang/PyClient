@@ -64,7 +64,7 @@ def create_user(user_data):
     try:
         server_url = f"{SERVER_URL}/api/register"
         # print(f"Creating user at {server_url} with data: {user_data}")
-        print(f"{json.dumps(user_data, indent=2)}")
+        # print(f"{json.dumps(user_data, indent=2)}")
         response = requests.post(server_url, json=user_data)
         # Try to parse JSON even on error status
         try:
@@ -203,7 +203,7 @@ def get_user_keys(sender_user_uuid: str, recipient_uuid, private_key: Ed25519Pri
     }
     """
     server_url = f"{SERVER_URL}/api/users/keys/{recipient_uuid}"
-    headers = set_headers(private_key=private_key, user_uuid=sender_user_uuid, payload=b"")
+    headers = set_headers(private_key=private_key, user_uuid=sender_user_uuid, payload=b"{}")
     response = requests.get(server_url, headers=headers)
     data, error = parse_server_response(response)
     return data, error
@@ -255,7 +255,7 @@ def download_file(file_uuid: str, private_key: Ed25519PrivateKey, user_uuid: str
         "mime_type": str,
     }
     """
-    headers = set_headers(private_key=private_key, user_uuid=user_uuid, payload=b"")
+    headers = set_headers(private_key=private_key, user_uuid=user_uuid, payload=b"{}")
     server_url = f"{SERVER_URL}/api/files/download/{file_uuid}"
     response = requests.get(url=server_url, headers=headers)
     response.raise_for_status()

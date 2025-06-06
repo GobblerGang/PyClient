@@ -154,6 +154,7 @@ def login_user_service(username: str, password: str):
     vault = get_user_vault(user)
     salt = base64.b64decode(vault.salt)
     master_key = derive_master_key(password, salt)
+    # print(f"Master key {master_key.hex()}")
     kek_info, error = server.get_kek_info(user.uuid)
     server_updated_at = kek_info.get('updated_at') if kek_info else None
     if error or not kek_info:

@@ -95,7 +95,9 @@ def signup():
         )
         
         user_uuid, error = server.get_new_user_uuid()
+        print(f'User UUID: {user_uuid}, Error: {error}')
         user_uuid_str = str(user_uuid)
+        print(f'User UUID as string: {user_uuid_str}')
         # print(f'User UUID: {user_uuid}, Error: {error}')
         if error:
             flash(f'Error communicating with the server. Please try again later')

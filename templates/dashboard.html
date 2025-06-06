@@ -21,6 +21,7 @@
                     </div>
                     <div class="mt-4">
                         <form method="post" action="{{ url_for('auth.export_user_keys') }}">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="btn btn-success">Export My Keys</button>
                         </form>
                     </div>
