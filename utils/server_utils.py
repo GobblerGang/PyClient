@@ -275,7 +275,7 @@ def get_owned_files(user_id: str, private_key: Ed25519PrivateKey):
     Returns a list of FileInfo JSON dicts.
     """
     server_url = f"{SERVER_URL}/api/files/owned"
-    headers = set_headers(private_key, user_id, b"")
+    headers = set_headers(private_key, user_id, b"{}")
     # response = requests.get(server_url, headers=headers)
     # response.raise_for_status()
     # return response.json().get('owned_files', [])
@@ -290,7 +290,7 @@ def get_user_pacs(user_id: str, private_key: Ed25519PrivateKey):
     """
     try:
         server_url = f"{SERVER_URL}/api/files/pacs"
-        headers = set_headers(private_key, user_id, b"")
+        headers = set_headers(private_key, user_id, b"{}")
         response = requests.get(server_url, headers=headers)
         response.raise_for_status()
         return response.json()
@@ -304,7 +304,7 @@ def get_file_info(file_uuid: str, user_uuid: str, private_key: Ed25519PrivateKey
     Returns a dict with file information or None if not found.
     """
     server_url = f"{SERVER_URL}/api/files/info/{file_uuid}"
-    headers = set_headers(private_key, user_uuid, b"")
+    headers = set_headers(private_key, user_uuid, b"{}")
     response = requests.get(server_url, headers=headers)
     data, error = parse_server_response(response)
     return data, error
